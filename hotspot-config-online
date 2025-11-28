@@ -30,6 +30,7 @@ else
   systemctl start fmchip-monitor
 fi
 
+echo ""
 /usr/sbin/hotspot-detect
 
 OLDCPVOL=$(grep volume /usr/sbin/hotspot | awk '{ print $6}'| tail -n 1)

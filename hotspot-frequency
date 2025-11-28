@@ -1,0 +1,52 @@
+#!/bin/bash
+
+TERM=xterm-256color
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+OLDFREQ=$(grep freq /usr/sbin/hotspot | awk '{ print $8}')
+OLDCTCSS=$(grep ctcss /usr/sbin/hotspot | awk '{ print $10}' | awk -F',' '{print $1}')
+CPVOL=$(grep volume /usr/sbin/hotspot | awk '{ print $6}'| tail -n 1)
+
+gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Frequency"
+
+gum style --foreground "#04B575" "Frequency:"
+FREQ=$(gum input --value "${OLDFREQ}")
+
+gum style --foreground 212 "${FREQ}"
+
+gum style --foreground "#04B575" "CTCSS on tx:"
+CTCSSTX=$(gum choose "Yes" "No")
+gum style --foreground 212 "${CTCSSTX}"
+  
+if [[ "${CTCSSTX}" == "Yes" ]]; then
+	gum style --foreground "#04B575" "Enter CTCSS TX tone:"
+	if [[ "${OLDCTCSS}" == "" ]]; then
+	  OLDCTCSS="88.5"
+	fi
+	CTCSS=$(gum input --value "${OLDCTCSS}")
+	gum style --foreground 212 "${CTCSS}"
+fi
+
+rm /usr/sbin/hotspot
+say "Configuring hotspot"
+echo "#!/bin/bash" > /usr/sbin/hotspot
+echo "" >> /usr/sbin/hotspot
+if [[ "${CTCSSTX}" == "Yes" ]]; then
+  echo "sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency ${FREQ} --ctcss ${CTCSS},0 --tail close --squelch 8" >> /usr/sbin/hotspot
+else
+  echo "sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency ${FREQ} --squelch 8" >> /usr/sbin/hotspot
+fi
+echo "sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
+echo "sa818 --port /dev/ttyAMA0 volume --level ${CPVOL}" >> /usr/sbin/hotspot
+chmod +x /usr/sbin/hotspot
+run "/usr/sbin/hotspot"

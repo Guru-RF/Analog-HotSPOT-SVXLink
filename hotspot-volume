@@ -1,0 +1,55 @@
+#!/bin/bash
+
+TERM=xterm-256color
+
+gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Volume"
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
+OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
+
+gum style --foreground "#04B575" "Enter AF output volume [50-80] (default 69):"
+AFVOL=$(gum input --value "${OLDAFVOL}")
+if [[ "${AFVOL}" == "" ]]; then
+  AFVOL=65
+fi
+gum style --foreground 212 "${AFVOL}"
+
+gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 19):"
+RFVOL=$(gum input --value "${OLDRFVOL}")
+if [[ "${RFVOL}" == "" ]]; then
+  RFVOL=19
+fi
+gum style --foreground 212 "${RFVOL}"
+
+  say "Configuring hotspot volume"
+  echo "#!/bin/bash" > /usr/sbin/hotspot_volume
+  echo "" >> /usr/sbin/hotspot_volume
+  echo "# audio to radio Module" >> /usr/sbin/hotspot_volume
+  echo "amixer set 'Headphone' ${AFVOL}%" >> /usr/sbin/hotspot_volume
+  echo "# audio from radio Module" >> /usr/sbin/hotspot_volume
+  echo "amixer set 'Capture' ${RFVOL}%" >> /usr/sbin/hotspot_volume
+  echo "" >> /usr/sbin/hotspot_volume
+  echo "
+# Disable ALC en Deemphasis
+amixer cset iface=MIXER,name='DAC Deemphasis Switch' 0
+amixer cset iface=MIXER,name='ALC Function' 0
+amixer cset iface=MIXER,name='ALC Target' 0
+amixer cset iface=MIXER,name='ALC Mode' 1
+amixer cset iface=MIXER,name='ALC Attack' 0
+amixer cset iface=MIXER,name='ALC Decay' 0
+amixer cset iface=MIXER,name='ALC Hold Time' 0
+amixer cset iface=MIXER,name='ALC Max Gain' 0
+amixer cset iface=MIXER,name='ALC Min Gain' 0
+amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0" >> /usr/sbin/hotspot_volume
+ run "/usr/sbin/hotspot_volume > /dev/null 2>&1"

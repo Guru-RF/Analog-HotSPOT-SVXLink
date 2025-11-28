@@ -1,0 +1,96 @@
+#!/bin/bash
+
+TERM=xterm-256color
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+CONFIG_FILE="/boot/firmware/config.txt"
+CMDLINE_FILE="/boot/firmware/cmdline.txt"
+
+FIRMWARE_SETTINGS=(
+    "hdmi_blanking=1"
+    "arm_freq=700"
+    "arm_freq_min=500"
+    "over_voltage=-6"
+    "gpu_freq=150"
+    "core_freq=150"
+)
+
+CMDLINE_SETTING="maxcpus=2"
+
+add_if_missing_config() {
+    local setting="$1"
+    if ! grep -q "^$setting" "$CONFIG_FILE"; then
+        echo "$setting" | sudo tee -a "$CONFIG_FILE" > /dev/null
+        say "${CONFIG_FILE} added $setting"
+    else
+        say "${CONFIG_FILE} already present $setting"
+    fi
+}
+
+remove_if_present_config() {
+    local setting="$1"
+    if grep -q "^$setting" "$CONFIG_FILE"; then
+        sudo sed -i "\|^$setting|d" "$CONFIG_FILE"
+        say "${CONFIG_FILE} removed: $setting"
+    else
+        say "${CONFIG_FILE} not found: $setting"
+    fi
+}
+
+add_if_missing_cmdline() {
+    if ! grep -q "$CMDLINE_SETTING" "$CMDLINE_FILE"; then
+        sudo sed -i "s|$| $CMDLINE_SETTING|" "$CMDLINE_FILE"
+        say "${CMDLINE_FILE} added $CMDLINE_SETTING"
+    else
+        say "${CMDLINE_FILE} already present $CMDLINE_SETTING"
+    fi
+}
+
+remove_if_present_cmdline() {
+    if grep -q "$CMDLINE_SETTING" "$CMDLINE_FILE"; then
+        sudo sed -i "s/\b$CMDLINE_SETTING\b//g" "$CMDLINE_FILE"
+        say "${CMDLINE_FILE} removed $CMDLINE_SETTING"
+    else
+        say "${CMDLINE_FILE} not found $CMDLINE_SETTING"
+    fi
+}
+
+gum style --foreground "#04B575" "Temperature Tuning:"
+TEMP=$(gum choose "Yes" "No")
+gum style --foreground 212 "${TEMP}"
+
+if [ "${TEMP}" = "Yes" ]; then
+	for setting in "${FIRMWARE_SETTINGS[@]}"; do
+	    add_if_missing_config "$setting"
+	done
+	add_if_missing_cmdline
+fi
+
+if [ "${TEMP}" = "No" ]; then
+	for setting in "${FIRMWARE_SETTINGS[@]}"; do
+	    remove_if_present_config "$setting"
+	done
+	remove_if_present_cmdline
+fi
+
+gum style --foreground "#04B575" "Announce Remote Callsign in background ?:"
+ANN=$(gum choose "Yes" "No")
+gum style --foreground 212 "${ANN}"
+
+if [ "${ANN}" = "Yes" ]; then
+	run "wget -O /usr/share/svxlink/events.d/ReflectorLogic.tcl  https://raw.githubusercontent.com/Guru-RF/SVXSpotMain/refs/heads/main/ReflectorLogicAnnounceRemoteCall.tcl > /dev/null 2>&1"
+fi
+
+if [ "${ANN}" = "No" ]; then
+	run "wget -O /usr/share/svxlink/events.d/ReflectorLogic.tcl  https://raw.githubusercontent.com/Guru-RF/SVXSpotMain/refs/heads/main/ReflectorLogic.tcl > /dev/null 2>&1"
+fi

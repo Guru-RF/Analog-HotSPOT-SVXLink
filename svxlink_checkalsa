@@ -1,0 +1,13 @@
+#!/bin/bash
+
+VAL=1
+
+while [[ "${VAL}" != "0" ]]
+do
+        echo "Waiting for sound driver"
+        aplay -l | grep seeed2micvoicec
+        VAL=$?
+        sleep 1
+done
+
+/usr/sbin/hotspot_volume

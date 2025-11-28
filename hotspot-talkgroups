@@ -1,0 +1,71 @@
+#!/bin/bash
+
+TERM=xterm-256color
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+OLDCTCSSMAPPING=$(cat /etc/svxlink/svxlink.conf | grep CTCSS_TO_TG | head -n 1 | tr "=" "\n" | tail -n 1)
+OLDTGS=$(cat /etc/svxlink/svxlink.conf | grep MONITOR_TGS | head -n 1 | tr "=" "\n" | tail -n 1)
+CALL=$(cat /etc/svxlink/svxlink.conf | grep CALL | head -n 1 | tr "=" "\n" | tail -n 1)
+QSYTIMEOUT=$(cat /etc/svxlink/svxlink.conf | grep QSY_PENDING_TIMEOUT | head -n 1 | tr "=" "\n" | tail -n 1)
+
+if [[ "${OLDTGS}" == *"--"* ]]; then
+  OLDTGS=8
+fi
+
+OLDSVXREFL=$(cat /etc/svxlink/svxlink.conf | grep DNS_DOMAIN | head -n 1 | tr "=" "\n" | tail -n 1)
+if [[ "${OLDSVXREFL}" == *"--"* ]]; then
+  OLDSVXREFL="hostname"
+fi
+OLDSVXCALL=$(cat /etc/svxlink/svxlink.conf | grep CALLSIGN | tr "=" "\n" | grep \" | tr -cd '[:alnum:]._-')
+if [[ "${OLDSVXCALL}" == *"--"* ]]; then
+  OLDSVXCALL="ON0RFG"
+fi
+OLDSVXEMAIL=$(grep CERT_EMAIL /etc/svxlink/svxlink.conf | tr "=" "\n" | grep \" | tr -cd '[:alnum:]._@-')
+if [[ "${OLDSVXEMAIL}" == *"--"* ]]; then
+  OLDSVXEMAIL="nobody@no.one"
+fi
+
+gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Talkgroups"
+
+gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...):"
+if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
+  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000,77.0:50,79.7:51,82.5:52,85.4:53,88.5:54,91.5:55"
+fi
+CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
+gum style --foreground 212 "${CTCSSMAPPING}"
+
+gum style --foreground "#04B575" "Enter talk groups to monitor:"
+if [[ "${OLDTGS}" == "" ]]; then
+  OLDTGS=8
+fi
+TGS=$(gum input --value "${OLDTGS}")
+gum style --foreground 212 "${TGS}"
+
+EPOCH=$(date +%s)
+
+say "Backup old config"
+run "cp /etc/svxlink/svxlink.conf /tmp/svxlink.conf.${EPOCH}"
+run "rm -f /tmp/svxlink.conf"
+say "Downloading latest config template"
+run "wget -O /tmp/svxlink.conf https://raw.githubusercontent.com/Guru-RF/SVXSpotMain/master/svxlink.conf > /dev/null 2>&1"
+say "Applying configuration"
+cp /tmp/svxlink.conf /etc/svxlink/svxlink.conf
+perl -i -pe "s/--HOST--/${OLDSVXREFL}/g" /etc/svxlink/svxlink.conf
+perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/svxlink.conf
+perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
+perl -i -pe "s/--TGS--/${TGS}/g" /etc/svxlink/svxlink.conf
+perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/node_info.json
+perl -i -pe "s/--SVXCALL--/${OLDSVXCALL}/g" /etc/svxlink/svxlink.conf
+perl -i -pe "s/--SVXEMAIL--/$(printf '%s' "$OLDSVXEMAIL" | sed 's/@/\\@/g')/g" /etc/svxlink/svxlink.conf
+run "systemctl restart svxlink"
+run "systemctl restart fmchip-monitor"

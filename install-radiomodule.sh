@@ -53,8 +53,6 @@ say "Enabling UART"
 run "grep -q 'enable_uart=1' /boot/firmware/config.txt || echo 'enable_uart=1' >> /boot/firmware/config.txt"
 say "Disabling serial getty"
 run 'systemctl disable serial-getty@ttyS0.service'
-say "Disabling wm8960-soundcard service"
-run 'systemctl disable wm8960-soundcard'
 
 say "Disabling ACT led"
 run "grep -q 'dtparam=act_led_trigger=none' /boot/firmware/config.txt || echo 'dtparam=act_led_trigger=none' >> /boot/firmware/config.txt"

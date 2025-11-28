@@ -1,0 +1,5 @@
+#!/bin/bash
+
+sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency 434.925 --ctcss 88.5,0 --tail close --squelch 8
+sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable
+sa818 --port /dev/ttyAMA0 volume --level 2

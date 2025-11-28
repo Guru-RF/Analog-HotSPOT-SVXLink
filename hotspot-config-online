@@ -30,6 +30,8 @@ else
   systemctl start fmchip-monitor
 fi
 
+/usr/sbin/hotspot-detect
+
 OLDCPVOL=$(grep volume /usr/sbin/hotspot | awk '{ print $6}'| tail -n 1)
 OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
 OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
@@ -206,7 +208,7 @@ gum style --foreground 212 "${RFVOL}"
 gum style --foreground "#04B575" "Enter RF compression [1-8] (default 1):"
 CPVOL=$(gum input --value "${OLDCPVOL}")
 if [[ "${CPVOL}" == "" ]]; then
-  CPVOL=2
+  CPVOL=1
 fi
 gum style --foreground 212 "${CPVOL}"
 
@@ -250,9 +252,9 @@ if [ $RESULT -eq 0 ]; then
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
   if [[ "${CTCSSTX}" == "Yes" ]]; then
-    echo "sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency ${FREQ} --ctcss ${CTCSS},0 --tail close --squelch 8" >> /usr/sbin/hotspot
+    echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSS},0 --tail close --squelch 8" >> /usr/sbin/hotspot
   else
-    echo "sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency ${FREQ} --squelch 8" >> /usr/sbin/hotspot
+    echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} --squelch 8" >> /usr/sbin/hotspot
   fi
   echo "sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
   echo "sa818 --port /dev/ttyAMA0 volume --level ${CPVOL}" >> /usr/sbin/hotspot

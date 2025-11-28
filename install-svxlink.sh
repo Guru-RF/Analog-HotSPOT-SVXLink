@@ -19,8 +19,7 @@ run "apt install libssl-dev ladspa-sdk moreutils build-essential g++ make cmake 
 say "Adding svxlink user and groups"
 run "groupadd svxlink"
 run "useradd -g svxlink -d /etc/svxlink svxlink"
-run "usermod -aG audio,nogroup,svxlink,plugdev svxlink"
-run "usermod -aG gpio svxlink"
+run "usermod -aG audio,nogroup,svxlink,plugdev,gpio svxlink"
 
 say "Installing/Compiling SVXLink"
 run "git clone --branch maint https://github.com/sm0svx/svxlink.git"

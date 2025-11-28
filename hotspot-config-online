@@ -301,6 +301,7 @@ amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0" >> /usr/sbin/hotsp
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
   say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups"
+  rm -f /needsconfig
 else
 gum style --foreground "#04B575" "Abort!"
 fi

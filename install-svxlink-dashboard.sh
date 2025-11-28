@@ -14,7 +14,7 @@ say () {
 MYPATH=${PWD}
 
 say "Install php.ini"
-run "cp php.ini /etc/php/8.2/apache2/php.ini"
+run "cp php.ini /etc/php/8.4/apache2/php.ini"
 
 say "Enable Apache"
 run "systemctl enable apache2"

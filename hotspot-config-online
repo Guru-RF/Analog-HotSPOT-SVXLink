@@ -243,7 +243,7 @@ if [ $RESULT -eq 0 ]; then
 	perl -i -pe "s/--LAT--/${LAT}/g" /etc/svxlink/node_info.json
 	perl -i -pe "s/--LON--/${LON}/g" /etc/svxlink/node_info.json
 	perl -i -pe "s/--LOC--/${LOC}/g" /etc/svxlink/node_info.json
-	perl -i -pe "s/--HIDDEN--/false,/g" /etc/svxlink/node_info.json
+	perl -i -pe "s/--HIDDEN--/false/g" /etc/svxlink/node_info.json
 	rm /usr/sbin/hotspot
   say "Configuring hotspot"
   echo "#!/bin/bash" > /usr/sbin/hotspot

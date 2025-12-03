@@ -17,14 +17,26 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
+# Detect chip version and enable/disable monitor accordingly
 systemctl stop fmchip-monitor
 CHIPVERSION=$(sa818 --port /dev/ttyAMA0 version 2>&1 | awk '{print $6}')
-if [[ "${CHIPVERSION}" == "V1.2" ]]; then
-  say "CHIP version V1.2 detected disabling chip monitor"
+
+# Strip leading 'V' (e.g. V1.2 -> 1.2)
+NUMVER=${CHIPVERSION#V}
+VMAJOR=${NUMVER%%.*}
+VMINOR=${NUMVER#*.}
+
+REFMAJOR=1
+REFMINOR=2
+
+if (( VMAJOR > REFMAJOR || (VMAJOR == REFMAJOR && VMINOR >= REFMINOR) )); then
+  # CHIPVERSION >= V1.2
+  say "CHIP version ${CHIPVERSION} detected disabling chip monitor"
   systemctl stop fmchip-monitor
   systemctl disable fmchip-monitor
 else
-  say "old CHIP version detected enabling chip monitor"
+  # CHIPVERSION < V1.2
+  say "old CHIP version ${CHIPVERSION} detected enabling chip monitor"
   systemctl enable fmchip-monitor
   systemctl start fmchip-monitor
 fi
@@ -101,7 +113,7 @@ fi
 gum style --foreground 212 "${REFLECTOR}"
 
 gum style --foreground "#04B575" "SVXLINK Reflector User Callsign:"
-SVXCALL=$(gum input --value "${OLDSVXCALL}")
+SVXCALL=$(gum input --value "${OLDSVXCALL"})
 if [[ "${SVXCALL}" == "" ]]; then
   SVXCALL=${OLDSVXCALL}
 fi

@@ -229,6 +229,9 @@ if [[ "${RFVOL}" == "" ]]; then
 fi
 gum style --foreground 212 "${RFVOL}"
 
+if [[ "${OLDCPVOL}" == "" ]]; then
+  OLDCPVOL="1"
+fi
 gum style --foreground "#04B575" "Enter RF compression [1-8] (default 1):"
 CPVOL=$(gum input --value "${OLDCPVOL}")
 if [[ "${CPVOL}" == "" ]]; then

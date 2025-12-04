@@ -25,12 +25,11 @@ After=svxlink_gpio_setup.service wm8960-soundcard.service
 
 [Service]
 EnvironmentFile=/etc/default/remotetrx
-PIDFile=${PIDFILE}
 ExecStartPre=-/bin/touch ${LOGFILE}
 ExecStartPre=-/bin/chown ${RUNASUSER} ${LOGFILE}
 ExecStartPre=-/usr/sbin/svxlink_checkalsa
 ExecStartPre=-/usr/sbin/hotspot
-ExecStart=/usr/bin/remotetrx --logfile=${LOGFILE} --config=${CFGFILE} --pidfile=${PIDFILE} --runasuser=${RUNASUSER}
+ExecStart=/usr/bin/remotetrx --logfile=${LOGFILE} --config=${CFGFILE} --runasuser=${RUNASUSER}
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 TimeoutStartSec=60

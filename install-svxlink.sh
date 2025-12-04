@@ -100,6 +100,14 @@ say "Install fmchip-monitor.service"
 run "cp fmchip-monitor.service /lib/systemd/system/fmchip-monitor.service"
 run "systemctl enable fmchip-monitor"
 
+say "Install hotspot-online"
+run "cp hotspot-online /usr/sbin/hotspot-online"
+run "chmod +x /usr/sbin/hotspot-online"
+
+say "Install hotspot-online.service"
+run "cp hotspot-online.service /lib/systemd/system/hotspot-online.service"
+run "systemctl enable hotspot-online"
+
 say "Installing systemd services"
 run "systemctl enable svxlink"
 

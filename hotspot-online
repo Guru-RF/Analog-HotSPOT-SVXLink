@@ -1,0 +1,6 @@
+#!/bin/bash
+sleep 5
+/usr/sbin/hotspot_dtmf "D911#"
+if [ -f /needsconfig ]; then
+   /usr/sbin/hotspot_dtmf "D1#"
+fi

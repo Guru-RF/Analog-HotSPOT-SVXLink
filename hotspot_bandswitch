@@ -1,0 +1,38 @@
+#!/bin/bash
+
+HOTSPOT_FILE="/usr/sbin/hotspot"
+BACKUP="/usr/sbin/hotspot.bak"
+
+# Detect band (VHF / UHF / OLD)
+BAND=$(/usr/sbin/hotspot-detect)
+
+# Only patch if NOT an old unit
+if [[ "$BAND" == "OLD" ]]; then
+    exit 0
+fi
+
+# Backup if not already done
+if [[ ! -f "$BACKUP" ]]; then
+    cp "$HOTSPOT_FILE" "$BACKUP"
+fi
+
+# Read content
+CONTENT=$(cat "$HOTSPOT_FILE")
+
+# Apply rules:
+# If VHF and file contains 434.925 → replace with 145.925
+# If UHF and file contains 145.925 → replace with 434.925
+
+if [[ "$BAND" == "VHF" ]]; then
+    if echo "$CONTENT" | grep -q "434.925"; then
+        sed -i 's/434\.925/145.925/g' "$HOTSPOT_FILE"
+        echo "Patched hotspot to VHF (145.925)"
+    fi
+fi
+
+if [[ "$BAND" == "UHF" ]]; then
+    if echo "$CONTENT" | grep -q "145.925"; then
+        sed -i 's/145\.925/434.925/g' "$HOTSPOT_FILE"
+        echo "Patched hotspot to UHF (434.925)"
+    fi
+fi

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run hotspot online announcement after SVXLink starts
+After=svxlink.service
+Requires=svxlink.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/hotspot-online
+RemainAfterExit=no
+
+[Install]
+WantedBy=svxlink.service

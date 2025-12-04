@@ -1,0 +1,11 @@
+[Unit]
+Description=Generate SSH host keys if missing
+Before=ssh.service
+ConditionPathExistsGlob=!/etc/ssh/ssh_host_*
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target

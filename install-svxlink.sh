@@ -92,6 +92,9 @@ say "Install mylocalip"
 run "cp mylocalip /usr/sbin/mylocalip"
 run "chmod +x /usr/sbin/mylocalip"
 
+say "Install custom Logic.tcl"
+run "cp Logic.tcl /usr/share/svxlink/events.d/local/Logic.tcl"
+
 say "Installing default configurations"
 run "cat svxlink.conf > /etc/svxlink/svxlink.conf"
 run "cat svxlink.conf > /etc/svxlink/svxlink.conf.orig"

@@ -32,7 +32,7 @@ ExecStartPre=-/usr/sbin/svxlink_checkalsa
 ExecStartPre=-/usr/sbin/hotspot_bandswitch
 ExecStartPre=-/usr/sbin/hotspot
 ExecStartPre=-/usr/sbin/hotspot_volume
-ExecStart=/bin/sh -c '/usr/bin/nc -lk 10000 | /usr/bin/svxlink --config=${CFGFILE} --pidfile=${PIDFILE} --runasuser=${RUNASUSER} | /usr/sbin/hotspot_logger ${LOGFILE}'
+ExecStart=/bin/sh -c '/usr/bin/nc -lk 10000 | /usr/bin/svxlink --config=${CFGFILE} --runasuser=${RUNASUSER} | /usr/sbin/hotspot_logger ${LOGFILE}'
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=on-failure
 TimeoutStartSec=60

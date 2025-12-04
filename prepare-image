@@ -37,6 +37,10 @@ say "remove pki's"
 say "install default hotspot config and frequency"
 cat hotspot-uhf >/usr/sbin/hotspot
 
+say "Install ssh-gen-keys.service"
+run "cp ssh-gen-keys.service /lib/systemd/system/ssh-gen-keys.service"
+run "systemctl enable ssh-gen-keys"
+
 say "remove svxspot repo and ha"
 cd ..
 rm -fr Analog-HotSPOT-SVXLink

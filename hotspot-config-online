@@ -163,6 +163,9 @@ if [ "${BAND}" = "2m" ]; then
 fi
 
 gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...):"
+if [[ "${OLDCTCSSMAPPING}" == "--CTCSSMAPPING--" ]]; then
+  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000,77.0:50,79.7:51,82.5:52,85.4:53,88.5:54,91.5:55"
+fi
 if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
   OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000,77.0:50,79.7:51,82.5:52,85.4:53,88.5:54,91.5:55"
 fi

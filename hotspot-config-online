@@ -113,7 +113,7 @@ fi
 gum style --foreground 212 "${REFLECTOR}"
 
 gum style --foreground "#04B575" "SVXLINK Reflector User Callsign:"
-SVXCALL=$(gum input --value "${OLDSVXCALL"})
+SVXCALL=$(gum input --value "${OLDSVXCALL}")
 if [[ "${SVXCALL}" == "" ]]; then
   SVXCALL=${OLDSVXCALL}
 fi

@@ -40,15 +40,15 @@ run "make doc"
 run "make install"
 
 say "Updating Logic.tcl"
-run "wget https://raw.githubusercontent.com/Guru-RF/SVXSpot/master/Logic.tcl"
+run "wget https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/Logic.tcl"
 run "cp Logic.tcl /usr/share/svxlink/events.d/local/Logic.tcl"
 
 say "Updating svxlink.service"
-run "wget https://raw.githubusercontent.com/Guru-RF/SVXSpot/master/svxlink.service"
+run "wget https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.service"
 run "cp svxlink.service /lib/systemd/system/svxlink.service"
 
 say "Updating remotetrx.service"
-run "wget https://raw.githubusercontent.com/Guru-RF/SVXSpot/master/remotetrx.service"
+run "wget https://raw.githubusercontent.com/Analog-HotSPOT-SVXLink/SVXSpot/master/remotetrx.service"
 run "cp remotetrx.service /lib/systemd/system/remotetrx.service"
 
 say "Cleanup"

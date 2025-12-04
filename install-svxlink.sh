@@ -88,6 +88,10 @@ say "Install hostspot-config"
 run "cp hotspot-config /usr/sbin/hotspot-config"
 run "chmod +x /usr/sbin/hotspot-config"
 
+say "Install mylocalip"
+run "cp mylocalip /usr/sbin/mylocalip"
+run "chmod +x /usr/sbin/mylocalip"
+
 say "Installing default configurations"
 run "cat svxlink.conf > /etc/svxlink/svxlink.conf"
 run "cat svxlink.conf > /etc/svxlink/svxlink.conf.orig"

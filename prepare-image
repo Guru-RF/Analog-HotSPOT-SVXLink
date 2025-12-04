@@ -41,7 +41,11 @@ say "remove svxspot repo and ha"
 cd ..
 rm -fr Analog-HotSPOT-SVXLink
 touch /needsconfig
-say "run as root:"
+say "run as hotspot user:"
 say "> history -c"
 say "> history -w"
+say "run as root user:"
+say "> history -c"
+say "> history -w"
+say "> nmcli connection delete preconfigured"
 say "> halt"

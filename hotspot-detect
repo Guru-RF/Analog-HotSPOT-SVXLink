@@ -1,0 +1,55 @@
+#!/usr/bin/env python3
+import gpiod
+
+# GPIO lines
+GPIO_TRX = 6    # Grounded → Transceiver HAT
+GPIO_HOT = 13   # Grounded → Hotspot HAT
+GPIO_UHF = 5    # Grounded → UHF
+GPIO_VHF = 7    # Grounded → VHF
+
+chip = gpiod.Chip("gpiochip0")
+
+def is_grounded(pin):
+    """Check whether a GPIO pin is pulled LOW."""
+    line = chip.get_line(pin)
+    line.request(consumer="rfhat_detect", type=gpiod.LINE_REQ_DIR_IN)
+    val = line.get_value()
+    line.release()
+    return val == 0
+
+
+def detect_hat():
+    # --- Device Type ---
+    trx_ground = is_grounded(GPIO_TRX)
+    hot_ground = is_grounded(GPIO_HOT)
+
+    if not trx_ground and not hot_ground:
+        # → This is an older device, do nothing
+        return "OLD_DEVICE", "UNKNOWN"
+
+    if trx_ground:
+        device = "TRANSCEIVER_HAT"
+    elif hot_ground:
+        device = "HOTSPOT_HAT"
+    else:
+        device = "UNKNOWN_DEVICE"
+
+    # --- Band Detection ---
+    uhf_ground = is_grounded(GPIO_UHF)
+    vhf_ground = is_grounded(GPIO_VHF)
+
+    # Bug workaround: if both grounded → treat as VHF
+    if vhf_ground:
+        band = "VHF"
+    elif uhf_ground:
+        band = "UHF"
+    else:
+        band = "UNKNOWN_BAND"
+
+    return device, band
+
+
+if __name__ == "__main__":
+    device, band = detect_hat()
+    print("DEVICE:", device)
+    print("BAND:", band)

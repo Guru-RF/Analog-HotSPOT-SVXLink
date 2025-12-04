@@ -77,8 +77,12 @@ run "cp gum /usr/sbin/gum"
 run "chmod a+rx /usr/sbin/gum"
 
 say "Install svxlink-update-release"
-run "cp svxlink-update-release.sh /usr/sbin/update-svxlink-release"
+run "cp update-svxlink-release.sh /usr/sbin/update-svxlink-release"
 run "chmod +x /usr/sbin/svxlink-update-release"
+
+say "Install hotspot-detect"
+run "cp hotspot-detect /usr/sbin/hotspot-detect"
+run "chmod +x /usr/sbin/hotspot-detect"
 
 say "Install hostspot-config"
 run "cp hotspot-config /usr/sbin/hotspot-config"

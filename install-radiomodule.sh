@@ -19,7 +19,7 @@ say "Installing Prerequisites"
 run "apt -y install python3-pip git python3-pyaudio python3-scipy"
 
 say "Installing SA818 Control Software"
-run "rm -rf /usr/lib/python3.13/EXTERNALLY-MANAGED"
+run "rm -rf /usr/lib/python3.11/EXTERNALLY-MANAGED"
 run "pip3 install sa818"
 
 say "Modify Locale"

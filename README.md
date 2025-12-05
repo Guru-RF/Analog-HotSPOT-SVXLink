@@ -1,92 +1,149 @@
-# SVXSpot: An SVXLink Analog Hotspot/Transcevier for the Raspberry Pi Zero
+# SVXSpot: An SVXLink Analog Hotspot/Transceiver for the Raspberry Pi Zero
 
 ## Available Products
-
-- [RF.Guru Analog Hotspot/Transceiver](https://shop.rf.guru/collections/hotspot)  
-  **300-500mW Power**
+- **RF.Guru Analog Hotspot/Transceiver**  
+  https://shop.rf.guru/collections/hotspot  
+  300–500 mW Power Output
 
 ---
 
 ## Repository Overview
 
-This repository tracks the **release branch** of SVXLink.
+This repository contains the release branch of **SVXSpot**, the software stack used on RF.Guru analog hotspots.
 
-After running the configurator, your **SVXReflector sysop** will need to sign your certificate. Once that's done, you're all set!
+After completing the initial configuration, your **SVXReflector sysop** must sign your certificate.  
+Once this is done, your hotspot is fully operational.
 
 ---
 
-## SVXLink - Bookworm Image
+# SVXLink Bookworm Image (2025-12-05)
 
-This image is designed for **UHF and VHF transceivers/hotspots**.  
+This image supports both **UHF** and **VHF** operation on the **Raspberry Pi Zero 2W**.
 
-### Default Configuration:
-- **Frequency UHF:** 434.925 MHz (FM Narrow)
-- **Frequency VHF:** 145.925 MHz (FM Narrow)
-- **CTCSS on the INPUT:** 88.5 Hz
-- **CTCSS on the OUTPUT:** 250.3 Hz
+## Default Configuration
 
-### Download:
-[Bookworm Image 2025-12-05](https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz)  
-*Compatible with Raspberry Pi Zero 2W*
+### UHF
+- Frequency: **434.925 MHz**
+- Mode: FM Narrow  
+- Input CTCSS: **88.5 Hz**  
+- Output CTCSS: **250.3 Hz**
 
-Boot the hotspot with a descent power supply that can provide enough current and has a stable voltage > 5v !
+### VHF
+- Frequency: **145.925 MHz**
+- Mode: FM Narrow  
+- Input CTCSS: **88.5 Hz**  
+- Output CTCSS: **250.3 Hz**
 
-It appears that the Raspberry Pi freezes after resizing the file system. Currently, after the initial boot, wait for 10 minutes, disconnect the power, and then restart. We suspect this issue is a bug and anticipate it will likely be resolved in a future release of pi-shrink.
+### Download
+Bookworm Image (2025-12-05):  
+https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
-To complete the final configuration step, you can connect via WiFi to the build-in AccessPopup called AccessPoppup with passkey 1234567890, go to the dashboard by browsing to [http://192.168.50.5/](http://192.168.50.5/). Chooce shell for shell access !
+---
 
-Username: hotspot
-Pasword: hotspot (you can change it when logged in by entering passswd)
+## First Boot Instructions
 
-Once logged in, you can execute:
-```console
+Use a **stable 5V power supply** (the Pi Zero 2W is sensitive to voltage drops).
+
+After the first boot, the Pi resizes the filesystem.  
+There is currently an upstream `pi-shrink` bug causing the Pi to freeze after resizing.
+
+**Temporary workaround:**
+1. Boot and wait **10 minutes**.  
+2. Disconnect power.  
+3. Power it back on.
+
+---
+
+# Wi-Fi Setup (AccessPopup)
+
+1. The hotspot broadcasts a Wi-Fi network:  
+   **SSID:** AccessPopup  
+   **Password:** 1234567890
+
+2. Connect and browse to:  
+   http://192.168.50.5/
+
+3. Select **Shell** to open a terminal.
+
+### Login
+- Username: hotspot  
+- Password: hotspot
+
+(Change this using `passwd` after login.)
+
+### Configure your Wi-Fi
+
+\`\`\`console
 sudo nmtui
-```
-Add your WiFi Network, quit, and reboot by:
-```console
+\`\`\`
+
+Select your network, save, exit, then reboot:
+
+\`\`\`console
 sudo reboot
-```
+\`\`\`
 
-Once rebooted you can configure your hotspot by browsing to [http://hotspot.local/](http://hotspot.local/)
+### After reboot
 
-This Youtube video illustrates the whole procuedure: [YouTube](https://www.youtube.com/watch?v=bKF9JRo0ORM)
+If your network/router supports mDNS, open:  
+http://hotspot.local/
 
-### Additional Features:
-- Sending `D911#` will return the **IP address**, making it easy to access the dashboard.
-- `hotspot-frequency` fast conifg to change frequency
-- `hotspot-options` fast config to set options like thermal optimalization and background announcement of the remote call (repeater/hotspot user)
-- `hotspot-talkgroups` fast config to change/add default talkgroup and talkgroup to ctcss mapping
-- `hotspot-volume` fast config option to set volume
+Video guide:  
+https://www.youtube.com/watch?v=bKF9JRo0ORM
 
 ---
 
-## Hardware Info
+# Additional Built-In Features
 
-**Used PIN's:**
- - 3 **GPIO2** 
- - 6 **GPIO3** 
- - 35 **GPIO19** 
- - 8 **TX** 
- - 10 **RX**
- - 12 **CLK** 
- - 32 **GPIO12** -> ***COS input*** from the radio chip 
- - 36 **GPIO16** -> ***PTT*** pin 
- - 38 **GPIO20** 
- - 40 **GPIO2**
- - 31 **GPIO6**
- - 33 **GPIO13**
- - 25 **GPIO7**
- - 29 **GPIO5**
+### Fast Commands
+- `D911#` — Returns the hotspot's IP address via RF  
+- `hotspot-frequency` — Quick frequency setup  
+- `hotspot-options` — Thermal settings + callsign announcement control  
+- `hotspot-talkgroups` — Talkgroup and CTCSS mapping  
+- `hotspot-volume` — Adjust audio levels
 
- # iPhone Personal Hotspot
+---
 
-You need to go to Personal Hotspot setting until the hotspot is connected, there is no option on the iPhone/iPad to have the SSID beeing broadcasted all the time.
-Once connected it works like a charm.
+# Hardware Information (GPIO)
+
+These Raspberry Pi GPIO pins are used by SVXSpot:
+
+- Pin 3: GPIO2  
+- Pin 6: GPIO3  
+- Pin 35: GPIO19  
+- Pin 8: TX  
+- Pin 10: RX  
+- Pin 12: CLK  
+- Pin 32: GPIO12 — COS input  
+- Pin 36: GPIO16 — PTT  
+- Pin 38: GPIO20  
+- Pin 40: GPIO21  
+- Pin 31: GPIO6  
+- Pin 33: GPIO13  
+- Pin 25: GPIO7  
+- Pin 29: GPIO5  
+
+---
+
+# iPhone Personal Hotspot Notes
+
+On iOS, the Personal Hotspot SSID is **not broadcast continuously**.  
+Open the **Personal Hotspot** settings page for the Pi to detect it.
+
+Once connected, it works reliably.
+
+---
 
 # Logs
-```console
-sudo tail -f /var/log/svxlink
-```
 
-### SVXLink Hotspot in action ###
+Monitor live SVXLink logs:
+
+\`\`\`console
+sudo tail -f /var/log/svxlink
+\`\`\`
+
+---
+
+# SVXLink Hotspot in Action
+
 https://github.com/Guru-RF/SVXSpot/assets/1251767/50dd4366-8439-4067-83b5-5866d0adca77

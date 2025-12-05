@@ -2,22 +2,22 @@
 
 # Quick Start
 
-1. Flash the image to an SD card:
+1. Flash the image to an SD card:  
    https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
-2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
+2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it using a **stable 5V supply**.
 
 3. Wait **10 minutes** on the very first boot (filesystem resize bug workaround), then power-cycle the Pi.
 
-4. Connect to Wi-Fi SSID:
-   - **AccessPopup**
+4. Connect to Wi-Fi SSID:  
+   - **AccessPopup**  
    - Password: **1234567890**
 
-5. Open the dashboard:
-   - http://192.168.50.5/
+5. Open the dashboard at:  
+   http://192.168.50.5/
 
-6. Open **Shell** → log in:
-   - Username: `hotspot`
+6. Open **Shell** → log in:  
+   - Username: `hotspot`  
    - Password: `hotspot`
 
 7. Configure your own Wi-Fi:
@@ -28,12 +28,30 @@
 
        sudo reboot
 
-9. After reboot:
-   - If your network supports mDNS → open:  
-     http://hotspot.local/
-   - If not → **the hotspot speaks its IP address over RF** on the default frequency.
+9. After reboot, log in via:  
+   - http://hotspot.local  
+   **or**  
+   - the **spoken IP address** announced over RF
 
-You're now ready to configure SVXSpot.
+10. Start the configuration wizard:
+
+       sudo hotspot-config
+
+11. For Belgian users, set the SVXLink domain to:  
+       be.svx.link
+
+12. After completing the wizard:  
+    Your **repeater sysadmin must sign your certificate request**.
+
+13. Once signed, continue setup:
+
+       sudo hotspot-options
+
+14. Belgian users can update talkgroups + button presets:
+
+       sudo hotspot-on-webportal
+
+15. You are now **ready to rumble** 🎙️📡
 
 ---
 
@@ -85,9 +103,7 @@ A known `pi-shrink` bug may cause the Pi to freeze after filesystem expansion.
 **Workaround:**  
 1. Boot and wait **10 minutes**  
 2. Remove power  
-3. Power on again  
-
-This should be resolved in a future Pi OS release.
+3. Power on again
 
 ---
 
@@ -103,7 +119,7 @@ This should be resolved in a future Pi OS release.
 3. Choose **Shell** to enter the terminal.
 
 ### Login Credentials
-- Username: `hotspot`
+- Username: `hotspot`  
 - Password: `hotspot`
 
 (Change later using `passwd`.)

@@ -1,0 +1,29 @@
+#!/bin/bash
+
+# Check if the script is run as root
+if [ "$EUID" -ne 0 ]; then
+	printf "\x1b[38;5;196mThis script must be run as root. Exiting...\x1b[39m\n"
+	exit 1
+fi
+
+run() {
+	exec=$1
+	printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+	eval ${exec}
+}
+
+say() {
+	say=$1
+	printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+EPOCH=$(date +%s)
+
+say "Downloading latest talkgroup database"
+run "wget --no-cache -O /var/www/html/include/tgdb.php https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/tgdb.php?${EPOCH} > /dev/null 2>&1"
+
+say "Downloading latest buttons"
+run "wget --no-cache -O /var/www/html/include/buttons.php https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/buttons.php?${EPOCH} > /dev/null 2>&1"
+
+say "Downloading latest config.inc.php"
+run "wget --no-cache -O /var/www/html/include/config.inc.php https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/config.inc.php?${EPOCH} > /dev/null 2>&1"

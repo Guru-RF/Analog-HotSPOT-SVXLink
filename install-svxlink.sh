@@ -92,6 +92,10 @@ say "Install mylocalip"
 run "cp mylocalip /usr/sbin/mylocalip"
 run "chmod +x /usr/sbin/mylocalip"
 
+say "Install hotspot-on-webportal"
+run "cp hotspot-on-webportal /usr/sbin/hotspot-on-webportal"
+run "chmod +x /usr/sbin/hotspot-on-webportal"
+
 say "Install custom Logic.tcl"
 run "cp Logic.tcl /usr/share/svxlink/events.d/local/Logic.tcl"
 

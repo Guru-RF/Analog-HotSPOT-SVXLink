@@ -5,51 +5,58 @@
 1. Flash the image to an SD card:  
    https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
-2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it using a **stable 5V supply**.
+2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
 
 3. Wait **10 minutes** on the very first boot (filesystem resize bug workaround), then power-cycle the Pi.
 
-4. Connect to Wi-Fi SSID:  
-   - **AccessPopup**  
-   - Password: **1234567890**
+4. Connect to the Wi-Fi SSID:  
+   **AccessPopup**  
+   Password: **1234567890**
 
-5. Open the dashboard at:  
+5. Open the dashboard:  
    http://192.168.50.5/
 
 6. Open **Shell** → log in:  
    - Username: `hotspot`  
    - Password: `hotspot`
 
-7. Configure your own Wi-Fi:
+7. Configure Wi-Fi:
 
-       sudo nmtui
+        sudo nmtui
 
 8. Reboot:
 
-       sudo reboot
+        sudo reboot
 
-9. After reboot, log in via:  
+9. After reboot, connect via:  
    - http://hotspot.local  
    **or**  
    - the **spoken IP address** announced over RF
 
-10. Start the configuration wizard:
+10. Start configuration:
 
-       sudo hotspot-config
+```bash
+sudo hotspot-config
+```
 
-11. For Belgian users, set the SVXLink domain to:  
-       be.svx.link
+11. For Belgian users, set the domain:
 
-12. After completing the wizard:  
-    Your **repeater sysadmin must sign your certificate request**.
+    be.svx.link
 
-13. Once signed, continue setup:
+12. After initial configuration, your **SVXReflector sysop must sign your certificate**.  
+    Once signed, your hotspot is fully operational.
 
-       sudo hotspot-options
+13. Continue setup:
+
+```bash
+sudo hotspot-options
+```
 
 14. Belgian users can update talkgroups + button presets:
 
-       sudo hotspot-on-webportal
+```bash
+sudo hotspot-on-webportal
+```
 
 15. You are now **ready to rumble** 🎙️📡
 
@@ -58,36 +65,25 @@
 ## Available Products
 - **RF.Guru Analog Hotspot/Transceiver**  
   https://shop.rf.guru/collections/hotspot  
-  300–500 mW Power Output
-
----
-
-## Repository Overview
-
-This repository contains the release branch of **SVXSpot**, the software used on RF.Guru analog hotspots.
-
-After initial configuration, your **SVXReflector sysop** must sign your certificate.  
-Once signed, your hotspot is fully operational.
+  300–500 mW Output Power
 
 ---
 
 # SVXLink Bookworm Image (2025-12-05)
 
-Supports **UHF** and **VHF** operation on Raspberry Pi Zero 2W.
+Supports **UHF** and **VHF** on Raspberry Pi Zero 2W.
 
 ## Default Configuration
 
 ### UHF
-- Frequency: **434.925 MHz**
-- Mode: FM Narrow  
-- Input CTCSS: **88.5 Hz**  
-- Output CTCSS: **250.3 Hz**
+- **434.925 MHz** — FM Narrow  
+- CTCSS Input: **88.5 Hz**  
+- CTCSS Output: **250.3 Hz**
 
 ### VHF
-- Frequency: **145.925 MHz**
-- Mode: FM Narrow  
-- Input CTCSS: **88.5 Hz**  
-- Output CTCSS: **250.3 Hz**
+- **145.925 MHz** — FM Narrow  
+- CTCSS Input: **88.5 Hz**  
+- CTCSS Output: **250.3 Hz**
 
 ### Download  
 https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
@@ -96,9 +92,7 @@ https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
 ## First Boot Instructions
 
-The Pi Zero 2W is sensitive to voltage drops — use a **high-quality 5V supply**.
-
-A known `pi-shrink` bug may cause the Pi to freeze after filesystem expansion.
+A known `pi-shrink` bug may freeze the Pi after filesystem expansion.
 
 **Workaround:**  
 1. Boot and wait **10 minutes**  
@@ -113,24 +107,22 @@ A known `pi-shrink` bug may cause the Pi to freeze after filesystem expansion.
    - **SSID:** AccessPopup  
    - **Password:** 1234567890
 
-2. Open:
+2. Open:  
    http://192.168.50.5/
 
-3. Choose **Shell** to enter the terminal.
+3. Choose **Shell**.
 
-### Login Credentials
+### Login
 - Username: `hotspot`  
 - Password: `hotspot`
 
-(Change later using `passwd`.)
-
 ### Configure Wi-Fi
 
-    sudo nmtui
+        sudo nmtui
 
-Select your network → save → exit → reboot:
+Reboot:
 
-    sudo reboot
+        sudo reboot
 
 ### After reboot
 
@@ -138,61 +130,55 @@ If your router supports mDNS:
 
 http://hotspot.local/
 
-If your network does **not** support mDNS:  
-The hotspot will **announce its IP address over RF** on the default frequency (spoken IP).  
-This makes it accessible even on simple networks.
+If not:  
+The hotspot **announces its IP address over RF** on the default frequency.
 
-Video guide:  
+Tutorial video:  
 https://www.youtube.com/watch?v=bKF9JRo0ORM
 
 ---
 
-# Additional Built-In Features
+# Built-In Tools
 
-### Fast Commands
-- `D911#` — Speaks the hotspot’s IP address over RF  
+- `D911#` — Speaks IP address over RF  
 - `hotspot-frequency` — Quick frequency setup  
-- `hotspot-options` — Thermal + announcement settings  
-- `hotspot-talkgroups` — Talkgroup + CTCSS mapping  
-- `hotspot-volume` — Audio level adjustment
+- `hotspot-options` — Thermal + announcements  
+- `hotspot-talkgroups` — Talkgroup/CTCSS mapping  
+- `hotspot-volume` — Audio control
 
 ---
 
-# Hardware Information (GPIO)
+# GPIO Pin Usage
 
-GPIO pins used by the SVXSpot HAT:
-
-- Pin 3: GPIO2  
-- Pin 6: GPIO3  
-- Pin 35: GPIO19  
-- Pin 8: TX  
-- Pin 10: RX  
-- Pin 12: CLK  
-- Pin 32: GPIO12 — COS input  
-- Pin 36: GPIO16 — PTT  
-- Pin 38: GPIO20  
-- Pin 40: GPIO21  
-- Pin 31: GPIO6  
-- Pin 33: GPIO13  
-- Pin 25: GPIO7  
-- Pin 29: GPIO5  
+- Pin 3  → GPIO2  
+- Pin 6  → GPIO3  
+- Pin 35 → GPIO19  
+- Pin 8  → TX  
+- Pin 10 → RX  
+- Pin 12 → CLK  
+- Pin 32 → GPIO12 (**COS input**)  
+- Pin 36 → GPIO16 (**PTT**)  
+- Pin 38 → GPIO20  
+- Pin 40 → GPIO21  
+- Pin 31 → GPIO6  
+- Pin 33 → GPIO13  
+- Pin 25 → GPIO7  
+- Pin 29 → GPIO5  
 
 ---
 
-# iPhone Personal Hotspot Notes
+# iPhone Hotspot Notes
 
-iOS does **not broadcast the hotspot SSID continuously**.  
-Open **Settings → Personal Hotspot** to force the SSID to appear.
-
-Once connected, it works normally.
+iOS does **not** broadcast the hotspot SSID continuously.  
+Open **Settings → Personal Hotspot** to force visibility.
 
 ---
 
 # Logs
 
-Live log monitoring:
-
-    sudo tail -f /var/log/svxlink
+```bash
+sudo tail -f /var/log/svxlink
+```
 
 ---
 

@@ -9,16 +9,16 @@
 
 ## Repository Overview
 
-This repository contains the release branch of **SVXSpot**, the software stack used on RF.Guru analog hotspots.
+This repository contains the release branch of **SVXSpot**, the software used on RF.Guru analog hotspots.
 
 After completing the initial configuration, your **SVXReflector sysop** must sign your certificate.  
-Once this is done, your hotspot is fully operational.
+Once this is done, your hotspot is ready for use.
 
 ---
 
 # SVXLink Bookworm Image (2025-12-05)
 
-This image supports both **UHF** and **VHF** operation on the **Raspberry Pi Zero 2W**.
+This image supports both **UHF** and **VHF** operation on the Raspberry Pi Zero 2W.
 
 ## Default Configuration
 
@@ -34,58 +34,53 @@ This image supports both **UHF** and **VHF** operation on the **Raspberry Pi Zer
 - Input CTCSS: **88.5 Hz**  
 - Output CTCSS: **250.3 Hz**
 
-### Download
-Bookworm Image (2025-12-05):  
+### Download  
 https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
 ---
 
 ## First Boot Instructions
 
-Use a **stable 5V power supply** (the Pi Zero 2W is sensitive to voltage drops).
+Use a **stable 5V power supply**, as the Pi Zero 2W is sensitive to drops.
 
-After the first boot, the Pi resizes the filesystem.  
-There is currently an upstream `pi-shrink` bug causing the Pi to freeze after resizing.
+The first boot performs a filesystem resize.  
+There is currently a `pi-shrink` bug causing freezes afterward.
 
-**Temporary workaround:**
-1. Boot and wait **10 minutes**.  
-2. Disconnect power.  
-3. Power it back on.
+**Temporary workaround:**  
+1. Boot and wait **10 minutes**  
+2. Remove power  
+3. Power on again
 
 ---
 
 # Wi-Fi Setup (AccessPopup)
 
-1. The hotspot broadcasts a Wi-Fi network:  
+1. The hotspot broadcasts this Wi-Fi network:  
    **SSID:** AccessPopup  
    **Password:** 1234567890
 
-2. Connect and browse to:  
+2. Connect and open:  
    http://192.168.50.5/
 
-3. Select **Shell** to open a terminal.
+3. Select **Shell** for terminal access.
 
 ### Login
-- Username: hotspot  
-- Password: hotspot
+- Username: `hotspot`  
+- Password: `hotspot`
 
-(Change this using `passwd` after login.)
+(Change with `passwd` once logged in.)
 
-### Configure your Wi-Fi
+### Configure Wi-Fi
 
-\`\`\`console
-sudo nmtui
-\`\`\`
+    sudo nmtui
 
-Select your network, save, exit, then reboot:
+Select your network → save → exit  
+Then reboot:
 
-\`\`\`console
-sudo reboot
-\`\`\`
+    sudo reboot
 
 ### After reboot
-
-If your network/router supports mDNS, open:  
+If your router supports mDNS, open:  
 http://hotspot.local/
 
 Video guide:  
@@ -96,17 +91,17 @@ https://www.youtube.com/watch?v=bKF9JRo0ORM
 # Additional Built-In Features
 
 ### Fast Commands
-- `D911#` — Returns the hotspot's IP address via RF  
+- `D911#` — Returns the hotspot’s IP via RF  
 - `hotspot-frequency` — Quick frequency setup  
-- `hotspot-options` — Thermal settings + callsign announcement control  
-- `hotspot-talkgroups` — Talkgroup and CTCSS mapping  
-- `hotspot-volume` — Adjust audio levels
+- `hotspot-options` — Thermal + announcements  
+- `hotspot-talkgroups` — Talkgroup + CTCSS mapping  
+- `hotspot-volume` — Audio level adjustment
 
 ---
 
 # Hardware Information (GPIO)
 
-These Raspberry Pi GPIO pins are used by SVXSpot:
+These Raspberry Pi GPIO pins are used:
 
 - Pin 3: GPIO2  
 - Pin 6: GPIO3  
@@ -127,20 +122,16 @@ These Raspberry Pi GPIO pins are used by SVXSpot:
 
 # iPhone Personal Hotspot Notes
 
-On iOS, the Personal Hotspot SSID is **not broadcast continuously**.  
-Open the **Personal Hotspot** settings page for the Pi to detect it.
-
-Once connected, it works reliably.
+On iOS, the Personal Hotspot SSID is not always broadcast.  
+Open the **Personal Hotspot** settings screen to make it visible.
 
 ---
 
 # Logs
 
-Monitor live SVXLink logs:
+Monitor SVXLink logs:
 
-\`\`\`console
-sudo tail -f /var/log/svxlink
-\`\`\`
+    sudo tail -f /var/log/svxlink
 
 ---
 

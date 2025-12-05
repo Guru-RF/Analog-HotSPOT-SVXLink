@@ -1,4 +1,4 @@
-# SVXSpot: An SVXLink Analog Hotspot for the Raspberry Pi Zero
+# SVXSpot: An SVXLink Analog Hotspot/Transcevier for the Raspberry Pi Zero
 
 ## Available Products
 

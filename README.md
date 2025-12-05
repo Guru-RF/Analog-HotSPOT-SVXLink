@@ -2,41 +2,37 @@
 
 ## Available Products
 
-- [RF.Guru Analog Hotspot 70CM (UHF)](https://shop.rf.guru/products/2025-ce-041-u)  
-  **100mW Power**
-
-- [RF.Guru Analog Hotspot 2M (VHF)](https://shop.rf.guru/products/2025-ce-041-v)  
-  **100mW Power** (Coming later this year)
+- [RF.Guru Analog Hotspot/Transceiver](https://shop.rf.guru/collections/hotspot)  
+  **300-500mW Power**
 
 ---
 
 ## Repository Overview
 
-This repository tracks the **main branch** of SVXLink. Most features are identical to the stable branch, with some notable new additions:
-
-- **Encryption** for enhanced security.
-- **Passwordless authentication** for ease of use. (Your device requests the certificate, we will confirm via the entered email adress in the configurtion)
+This repository tracks the **release branch** of SVXLink.
 
 After running the configurator, your **SVXReflector sysop** will need to sign your certificate. Once that's done, you're all set!
 
 ---
 
-## SVXLink UHF - Bookworm Image
+## SVXLink - Bookworm Image
 
-This image is designed for **UHF transceivers/hotspots**.  
+This image is designed for **UHF and VHF transceivers/hotspots**.  
 
 ### Default Configuration:
-- **Frequency:** 434.925 MHz (FM Wide)
-- **CTCSS:** 88.5 Hz (for both RX and TX)
+- **Frequency UHF:** 434.925 MHz (FM Narrow)
+- **Frequency VHF:** 145.925 MHz (FM Narrow)
+- **CTCSS on the INPUT:** 88.5 Hz
+- **CTCSS on the OUTPUT:** 250.3 Hz
 
 ### Download:
-[Bookworm Image 2025-01-28](https://storage.googleapis.com/rf-guru/rpi-images/hotspot-main-2025-01-28.img.gz)  
-*Compatible with Raspberry Pi Zero 2W, Raspberry Pi 4, and Raspberry Pi 5.*
+[Bookworm Image 2025-12-05](https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz)  
+*Compatible with Raspberry Pi Zero 2W*
 
-### Additional Feature:
+### Additional Features:
 - Sending `D911#` will return the **IP address**, making it easy to access the dashboard.
 - `hotspot-frequency` fast conifg to change frequency
-- `hotspot-options` fast config to set options
+- `hotspot-options` fast config to set options like thermal optimalization and background announcement of the remote call (repeater/hotspot user)
 - `hotspot-talkgroups` fast config to change/add default talkgroup and talkgroup to ctcss mapping
 - `hotspot-volume` fast config option to set volume
 

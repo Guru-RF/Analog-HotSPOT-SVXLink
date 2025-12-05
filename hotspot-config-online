@@ -349,6 +349,9 @@ EOF
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
   say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups"
+  say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
+  say ""
+  say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
 
   rm -f /needsconfig
 else

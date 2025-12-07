@@ -92,6 +92,10 @@ say "Install mylocalip"
 run "cp mylocalip /usr/sbin/mylocalip"
 run "chmod +x /usr/sbin/mylocalip"
 
+say "Install hotspot_bandswitch"
+run "cp hotspot_bandswitch /usr/sbin/hotspot_bandswitch"
+run "chmod +x /usr/sbin/hotspot_bandswitch"
+
 say "Install hotspot-on-webportal"
 run "cp hotspot-on-webportal /usr/sbin/hotspot-on-webportal"
 run "chmod +x /usr/sbin/hotspot-on-webportal"

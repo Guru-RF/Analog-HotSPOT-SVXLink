@@ -100,6 +100,10 @@ say "Install hotspot-on-webportal"
 run "cp hotspot-on-webportal /usr/sbin/hotspot-on-webportal"
 run "chmod +x /usr/sbin/hotspot-on-webportal"
 
+say "Install svxlink-message"
+run "cp svxlink-message /usr/sbin/svxlink-message"
+run "chmod +x /usr/sbin/svxlink-message"
+
 say "Install custom Logic.tcl"
 run "cp Logic.tcl /usr/share/svxlink/events.d/local/Logic.tcl"
 

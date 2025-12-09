@@ -4,11 +4,11 @@ DefaultDependencies=no
 After=local-fs.target
 Wants=local-fs.target
 ConditionPathIsReadWrite=/usr
-ConditionPathExists=/usr/sbin/auto-expand-rootfs.sh
+ConditionPathExists=/usr/sbin/auto-expand-rootfs
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/auto-expand-rootfs.sh
+ExecStart=/usr/sbin/auto-expand-rootfs
 
 [Install]
 WantedBy=multi-user.target

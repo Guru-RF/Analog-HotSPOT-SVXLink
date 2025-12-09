@@ -63,10 +63,11 @@ fi
 log "Partition number: $PART_NUM"
 
 # Make sure this partition is the last one on the disk
-# We derive the "largest" partition number by stripping non-digits from each partition name.
+# Extract the numeric partition number for each partition (trailing digits only)
 MAX_PART_NUM="$(
   lsblk -nrpo NAME,TYPE "$DISK" 2>/dev/null \
-  | awk '$2=="part"{gsub(/[^0-9]/,"",$1); print $1}' \
+  | awk '$2=="part"{print $1}' \
+  | sed -E 's/.*[^0-9]([0-9]+)/\1/' \
   | sort -n \
   | tail -n1 || true
 )"
@@ -76,7 +77,7 @@ if [[ -z "$MAX_PART_NUM" ]]; then
   exit 1
 fi
 
-if [[ "$PART_NUM" != "$MAX_PART_NUM" ]]; then
+if (( PART_NUM != MAX_PART_NUM )); then
   log "Root partition ($PART_NUM) is not the last partition on the disk (last is $MAX_PART_NUM). Not expanding."
   systemctl disable auto-expand-rootfs.service >/dev/null 2>&1 || true
   exit 0
@@ -110,7 +111,6 @@ if ! command -v parted >/dev/null 2>&1; then
   exit 1
 fi
 
-# Use partition number we derived from the device name
 parted -s "$DISK" resizepart "$PART_NUM" 100% || {
   log "parted resizepart failed."
   exit 1

@@ -7,14 +7,14 @@
 
 2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
 
-3. Wait **10 minutes** on the very first boot (filesystem resize bug workaround), then power-cycle the Pi.
+3. Wait for it to boot up.
 
 4. Connect to the Wi-Fi SSID:  
    **AccessPopup**  
    Password: **1234567890**
 
 5. Open the dashboard:  
-   http://192.168.50.5/
+   http://192.168.50.5/ (or http://hotspot.local)
 
 6. Open **Shell** → log in:  
    - Username: `hotspot`  
@@ -87,17 +87,6 @@ Supports **UHF** and **VHF** on Raspberry Pi Zero 2W.
 
 ### Download  
 https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
-
----
-
-## First Boot Instructions
-
-A known `pi-shrink` bug may freeze the Pi after filesystem expansion.
-
-**Workaround:**  
-1. Boot and wait **10 minutes**  
-2. Remove power  
-3. Power on again
 
 ---
 

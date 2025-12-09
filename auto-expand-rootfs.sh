@@ -83,7 +83,7 @@ if (( PART_NUM != MAX_PART_NUM )); then
   exit 0
 fi
 
-# --- SIZE CHECK (fixed) ---
+# --- SIZE CHECK ---
 
 # Get disk size in bytes (device only, one line)
 DISK_SIZE="$(lsblk -bdno SIZE "$DISK" 2>/dev/null | head -n1 || true)"
@@ -99,9 +99,6 @@ if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]] || ! [[ "$PART_SIZE" =~ ^[0-9]+$ ]]; then
   log "Non-numeric size values: DISK_SIZE='$DISK_SIZE', PART_SIZE='$PART_SIZE'"
   exit 1
 fi
-
-DISK_SIZE=$DISK_SIZE
-PART_SIZE=$PART_SIZE
 
 FREE_BYTES=$((DISK_SIZE - PART_SIZE))
 MIN_SLACK=$((8 * 1024 * 1024)) # require at least 8 MiB to bother
@@ -122,10 +119,14 @@ if ! command -v parted >/dev/null 2>&1; then
   exit 1
 fi
 
-parted -s "$DISK" resizepart "$PART_NUM" 100% || {
+log "Resizing partition $PART_NUM on $DISK to 100% (auto-confirming in-use warning)..."
+
+# Some parted versions still prompt when the partition is in use.
+# ---pretend-input-tty makes it read from stdin; we feed "Yes\n" to confirm.
+if ! printf "Yes\n" | parted ---pretend-input-tty "$DISK" resizepart "$PART_NUM" 100%; then
   log "parted resizepart failed."
   exit 1
-}
+fi
 
 log "Partition resized, re-reading partition table…"
 

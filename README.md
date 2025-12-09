@@ -90,17 +90,6 @@ https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
 
 ---
 
-## First Boot Instructions
-
-A known `pi-shrink` bug may freeze the Pi after filesystem expansion.
-
-**Workaround:**  
-1. Boot and wait **10 minutes**  
-2. Remove power  
-3. Power on again
-
----
-
 # Wi-Fi Setup (AccessPopup)
 
 1. Connect to:

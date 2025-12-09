@@ -27,19 +27,49 @@ if [[ -z "$ROOT_DEV" ]]; then
 fi
 log "Root device: $ROOT_DEV"
 
-# Get parent disk and partition number via lsblk
-DISK="/dev/$(lsblk -no PKNAME "$ROOT_DEV")"
-PART_NUM="$(lsblk -no PARTNUM "$ROOT_DEV")"
+ROOT_BASENAME="$(basename "$ROOT_DEV")"
 
-if [[ -z "$DISK" || -z "$PART_NUM" ]]; then
-  log "Could not determine parent disk or partition number."
+# Determine parent disk (e.g. /dev/mmcblk0, /dev/sda, /dev/nvme0n1)
+PARENT_KNAME="$(lsblk -no PKNAME "$ROOT_DEV" 2>/dev/null || true)"
+if [[ -n "$PARENT_KNAME" ]]; then
+  DISK="/dev/$PARENT_KNAME"
+else
+  case "$ROOT_BASENAME" in
+    mmcblk*p[0-9]*|nvme*n[0-9]*p[0-9]*)
+      # /dev/mmcblk0p2 -> /dev/mmcblk0
+      # /dev/nvme0n1p2 -> /dev/nvme0n1
+      DISK="/dev/${ROOT_BASENAME%p*}"
+      ;;
+    *)
+      # /dev/sda2 -> /dev/sda
+      DISK="/dev/${ROOT_BASENAME%%[0-9]*}"
+      ;;
+  esac
+fi
+
+if [[ -z "$DISK" || ! -b "$DISK" ]]; then
+  log "Could not determine parent disk for $ROOT_DEV."
   exit 1
 fi
 
-log "Disk: $DISK, partition: $PART_NUM"
+log "Disk: $DISK"
+
+# Partition number = trailing digits of the device name (2 in mmcblk0p2, 3 in sda3, 10 in nvme0n1p10)
+PART_NUM="$(echo "$ROOT_DEV" | grep -o '[0-9]\+$' || true)"
+if [[ -z "$PART_NUM" ]]; then
+  log "Could not determine partition number for $ROOT_DEV."
+  exit 1
+fi
+log "Partition number: $PART_NUM"
 
 # Make sure this partition is the last one on the disk
-MAX_PART_NUM="$(lsblk -nro PARTNUM "$DISK" | grep -E '^[0-9]+$' | sort -n | tail -n1 || true)"
+# We derive the "largest" partition number by stripping non-digits from each partition name.
+MAX_PART_NUM="$(
+  lsblk -nrpo NAME,TYPE "$DISK" 2>/dev/null \
+  | awk '$2=="part"{gsub(/[^0-9]/,"",$1); print $1}' \
+  | sort -n \
+  | tail -n1 || true
+)"
 
 if [[ -z "$MAX_PART_NUM" ]]; then
   log "No partition numbers found on $DISK; aborting."
@@ -47,15 +77,14 @@ if [[ -z "$MAX_PART_NUM" ]]; then
 fi
 
 if [[ "$PART_NUM" != "$MAX_PART_NUM" ]]; then
-  log "Root partition is not the last partition on the disk (max is $MAX_PART_NUM). Not expanding."
-  # Disable ourselves: nothing useful to do automatically
+  log "Root partition ($PART_NUM) is not the last partition on the disk (last is $MAX_PART_NUM). Not expanding."
   systemctl disable auto-expand-rootfs.service >/dev/null 2>&1 || true
   exit 0
 fi
 
 # Check sizes (bytes)
-DISK_SIZE="$(lsblk -bno SIZE "$DISK")"
-PART_SIZE="$(lsblk -bno SIZE "$ROOT_DEV")"
+DISK_SIZE="$(lsblk -bno SIZE "$DISK" 2>/dev/null || true)"
+PART_SIZE="$(lsblk -bno SIZE "$ROOT_DEV" 2>/dev/null || true)"
 
 if [[ -z "$DISK_SIZE" || -z "$PART_SIZE" ]]; then
   log "Could not read disk or partition size."
@@ -63,8 +92,7 @@ if [[ -z "$DISK_SIZE" || -z "$PART_SIZE" ]]; then
 fi
 
 FREE_BYTES=$((DISK_SIZE - PART_SIZE))
-# Require at least 8 MiB extra space to bother
-MIN_SLACK=$((8 * 1024 * 1024))
+MIN_SLACK=$((8 * 1024 * 1024)) # require at least 8 MiB to bother
 
 log "Disk size: $DISK_SIZE bytes, partition size: $PART_SIZE bytes, free: $FREE_BYTES bytes"
 
@@ -76,21 +104,20 @@ fi
 
 log "Extra space detected. Attempting to expand partition and filesystem..."
 
-# Grow partition to fill disk
-# Note: parted must be installed.
+# Grow partition to fill disk (requires parted)
 if ! command -v parted >/dev/null 2>&1; then
   log "parted not found; cannot expand partition."
   exit 1
 fi
 
-# Some parted versions need a "Yes" confirmation when moving the end;
-# using -s avoids asking for input.
+# Use partition number we derived from the device name
 parted -s "$DISK" resizepart "$PART_NUM" 100% || {
   log "parted resizepart failed."
   exit 1
 }
 
 log "Partition resized, re-reading partition table…"
+
 # Inform the kernel of partition changes
 if command -v partprobe >/dev/null 2>&1; then
   partprobe "$DISK" || true
@@ -100,7 +127,7 @@ else
   log "Neither partprobe nor partx found. A reboot may be required for the kernel to see new size."
 fi
 
-# Now expand filesystem (assumes ext4; adjust if using xfs, btrfs, etc.)
+# Now expand filesystem (assumes ext4)
 if ! command -v resize2fs >/dev/null 2>&1; then
   log "resize2fs not found; cannot resize ext4 filesystem."
   exit 1

@@ -36,6 +36,15 @@ say "remove pki's"
 say "install default hotspot config and frequency"
 cat hotspot-uhf >/usr/sbin/hotspot
 
+say "Install auto-expand-rootfs"
+run "cp auto-expand-rootfs /usr/sbin/auto-expand-rootfs"
+run "chmod +x /usr/sbin/auto-expand-rootfs"
+run "touch /expand-rootfs"
+
+say "Install auto-expand-rootfs.service"
+run "cp auto-expand-rootfs.service /lib/systemd/system/auto-expand-rootfs.service"
+run "systemctl enable auto-expand-rootfs.service"
+
 say "Install ssh-gen-keys.service"
 run "cp ssh-gen-keys.service /lib/systemd/system/ssh-gen-keys.service"
 run "systemctl enable ssh-gen-keys"

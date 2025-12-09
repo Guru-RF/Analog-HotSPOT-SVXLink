@@ -1,0 +1,14 @@
+[Unit]
+Description=Auto-expand root filesystem if space is available
+DefaultDependencies=no
+After=local-fs.target
+Wants=local-fs.target
+ConditionPathIsReadWrite=/usr
+ConditionPathExists=/usr/sbin/auto-expand-rootfs.sh
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/auto-expand-rootfs.sh
+
+[Install]
+WantedBy=multi-user.target

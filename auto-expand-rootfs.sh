@@ -83,14 +83,25 @@ if (( PART_NUM != MAX_PART_NUM )); then
   exit 0
 fi
 
-# Check sizes (bytes)
-DISK_SIZE="$(lsblk -bno SIZE "$DISK" 2>/dev/null || true)"
-PART_SIZE="$(lsblk -bno SIZE "$ROOT_DEV" 2>/dev/null || true)"
+# --- SIZE CHECK (fixed) ---
+
+# Get disk size in bytes (device only, one line)
+DISK_SIZE="$(lsblk -bdno SIZE "$DISK" 2>/dev/null | head -n1 || true)"
+PART_SIZE="$(lsblk -bdno SIZE "$ROOT_DEV" 2>/dev/null | head -n1 || true)"
 
 if [[ -z "$DISK_SIZE" || -z "$PART_SIZE" ]]; then
   log "Could not read disk or partition size."
   exit 1
 fi
+
+# Sanity check: must be numeric
+if ! [[ "$DISK_SIZE" =~ ^[0-9]+$ ]] || ! [[ "$PART_SIZE" =~ ^[0-9]+$ ]]; then
+  log "Non-numeric size values: DISK_SIZE='$DISK_SIZE', PART_SIZE='$PART_SIZE'"
+  exit 1
+fi
+
+DISK_SIZE=$DISK_SIZE
+PART_SIZE=$PART_SIZE
 
 FREE_BYTES=$((DISK_SIZE - PART_SIZE))
 MIN_SLACK=$((8 * 1024 * 1024)) # require at least 8 MiB to bother

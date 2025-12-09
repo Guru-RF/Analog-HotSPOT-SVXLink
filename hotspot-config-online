@@ -352,6 +352,9 @@ EOF
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
   say ""
   say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
+  say ""
+  say "If this is your first time running the config script please reboot your system with:"
+  say "run ">sudo reboot"
 
   rm -f /needsconfig
 else

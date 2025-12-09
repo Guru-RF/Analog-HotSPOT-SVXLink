@@ -48,6 +48,7 @@ run "systemctl enable auto-expand-rootfs.service"
 say "Install ssh-gen-keys.service"
 run "cp ssh-gen-keys.service /lib/systemd/system/ssh-gen-keys.service"
 run "systemctl enable ssh-gen-keys"
+run "systemctl daemon-reload"
 
 say "remove svxspot repo and ha"
 cd ..

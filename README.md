@@ -120,7 +120,7 @@ If your router supports mDNS:
 http://hotspot.local/
 
 If not:  
-The hotspot **announces its IP address over RF** on the default frequency.
+The hotspot **announces its IP address over RF** on the default frequency. (434.925 MHz — FM Narrow | 145.925 MHz — FM Narrow)
 
 Tutorial video:  
 https://www.youtube.com/watch?v=bKF9JRo0ORM

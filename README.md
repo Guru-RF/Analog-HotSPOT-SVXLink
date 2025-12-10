@@ -87,7 +87,7 @@ Supports **UHF** and **VHF** on Raspberry Pi Zero 2W.
 - CTCSS Output: **250.3 Hz**
 
 ### Download  
-https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-05.img.gz
+https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
 ---
 

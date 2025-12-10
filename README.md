@@ -3,37 +3,38 @@
 # Quick Start
 
 1. Flash the image to an SD card:  (The device already includes a freshly flashed SD card — you can skip this step and go straight to step 3.)
-   https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
-2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
+https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
-3. Wait for it to boot up.
+3. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
 
-4. Connect to the Wi-Fi SSID:  
+4. Wait for it to boot up.
+
+5. Connect to the Wi-Fi SSID:  
    **AccessPopup**  
    Password: **1234567890**
 
-5. Open the dashboard:  
+6. Open the dashboard:  
    http://192.168.50.5/ (or http://hotspot.local)
 
-6. Open **Shell** → log in:  
+7. Open **Shell** → log in:  
    - Username: `hotspot`  
    - Password: `hotspot`
 
-7. Configure Wi-Fi:
+8. Configure Wi-Fi:
 
         sudo nmtui
 
-8. Reboot:
+9. Reboot:
 
         sudo reboot
 
-9. After reboot, connect via:  
+10. After reboot, connect via:  
    - http://hotspot.local  
    **or**  
    - the **spoken IP address** announced over RF
 
-10. Start configuration:
+11. Start configuration:
 
 ```bash
 sudo hotspot-config

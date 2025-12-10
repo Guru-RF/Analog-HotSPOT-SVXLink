@@ -172,6 +172,105 @@ sudo tail -f /var/log/svxlink
 
 ---
 
+# Activating a Talkgroup
+
+To activate a talkgroup, send the corresponding CTCSS tone from the mapping while in TG0.
+
+You’ll hear a bleep tone 15 seconds after a QSO.
+This will instantly open the talkgroup – no need for double presses like before.
+You can start speaking immediately!
+
+Alternatively you can use:
+
+    DTMF 91#
+
+---
+
+# Retrieving the Current IP Address
+
+To get the current IP address of the hotspot, send:
+
+    DTMF D911#
+
+---
+
+# Monitoring Multiple Talkgroups
+
+To set up multiple talkgroups for monitoring, configure them in hotspot-config using this format:
+
+    8++, 23+, 50, 51, 52, 53, 54, 55
+
+The TX CTCSS tone remains the same across all talkgroups.
+The plus signs (+) indicate priority levels.
+
+Temporarily monitor (for one hour) another talkgroup:
+
+    DTMF 94#
+
+Example for TG23:
+
+    9423#
+
+---
+
+# CTCSS Talkgroup Mapping
+
+You can map talkgroups via CTCSS tones using the following format:
+
+    tone:talkgroup, tone:talkgroup, …
+
+Example default mapping:
+
+    67.0:8400, 69.3:8, 71.9:23, 74.4:9000, 77.0:50, 79.7:51, 82.5:52, 85.4:53, 88.5:54, 91.5:55
+
+Mapping a single default talkgroup:
+
+    88.5:8
+
+This maps CTCSS tone 88.5 to talkgroup 8.
+
+---
+
+# Accessing the Local Portal
+
+You can access the local dashboard:
+
+- Via hostname (if your network supports mDNS)
+- Or via the hotspot’s IP address
+
+---
+
+# Choosing a Frequency and CTCSS Tone
+
+We advise selecting a frequency not used by nearby repeaters.
+Do **not** use the ISM frequency 433.000 MHz.
+
+Recommended defaults we use:
+
+- **70 cm:** 439.100 MHz  
+- **2 m:** 145.250 MHz  
+- **CTCSS:** 88.5 Hz
+
+Use a tone not locally used.
+
+---
+
+# Modify Talkgroups on the Dashboard
+
+Edit base talkgroups:
+
+```bash
+    sudo vi /var/www/html/include/tgdb.php
+```
+
+Edit talkgroup buttons:
+
+```bash
+    sudo vi /var/www/html/include/config.inc.php
+```
+
+---
+
 # SVXLink Hotspot in Action
 
 https://github.com/Guru-RF/SVXSpot/assets/1251767/50dd4366-8439-4067-83b5-5866d0adca77

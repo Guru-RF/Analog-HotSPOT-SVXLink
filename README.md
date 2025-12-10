@@ -32,7 +32,7 @@
 10. After reboot, connect via:  
    - http://hotspot.local  
    **or**  
-   - the **spoken IP address** announced over RF
+   - the **spoken IP address** announced over RF (434.925 MHz — FM Narrow | 145.925 MHz — FM Narrow)
 
 11. Start configuration:
 

@@ -2,7 +2,7 @@
 
 # Quick Start
 
-1. Flash the image to an SD card:  
+1. Flash the image to an SD card:  (The device already includes a freshly flashed SD card — you can skip this step and go straight to step 3.)
    https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
 2. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.

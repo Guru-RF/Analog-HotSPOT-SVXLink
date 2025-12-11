@@ -225,7 +225,7 @@ if [[ "${AFVOL}" == "" ]]; then
 fi
 gum style --foreground 212 "${AFVOL}"
 
-gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 19):"
+gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 17):"
 RFVOL=$(gum input --value "${OLDRFVOL}")
 if [[ "${RFVOL}" == "" ]]; then
   RFVOL=19

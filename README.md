@@ -70,7 +70,7 @@ sudo hotspot-on-webportal
 
 ---
 
-# SVXLink Bookworm Image (2025-12-05)
+# SVXLink Bookworm Image
 
 Supports **UHF** and **VHF** on Raspberry Pi Zero 2W.
 

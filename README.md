@@ -229,6 +229,7 @@ Mapping a single default talkgroup:
 
 This maps CTCSS tone 88.5 to talkgroup 8.
 
+To switch wait until hotspot is on talkgroup 0 or send DTMF 910#
 ---
 
 # Accessing the Local Portal

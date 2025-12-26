@@ -182,7 +182,7 @@ You can start speaking immediately!
 
 Alternatively you can use:
 
-    DTMF 91#
+    DTMF 91<TALKGROUP>#
 
 ---
 

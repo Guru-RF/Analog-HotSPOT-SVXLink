@@ -1,0 +1,116 @@
+#!/usr/bin/env bash
+# Detect SSD1306-like OLED on any I2C bus.
+# Exits:
+#   0 = detected (0x3C/0x3D)
+#   1 = not detected
+#   2 = I2C not available / tools missing / permission problem
+#
+# Usage:
+#   check-ssd1306               # auto-scan all buses
+#   check-ssd1306 1             # scan only bus 1
+#   check-ssd1306 --debug       # verbose auto-scan
+
+set -u
+
+DEBUG=0
+if [[ "${1:-}" == "--debug" ]]; then
+  DEBUG=1
+  shift || true
+fi
+
+BUS_ARG="${1:-}"             # optional
+ADDRS=("3c" "3d")
+
+log() { [[ "$DEBUG" -eq 1 ]] && echo "$@" >&2; }
+
+scan_bus() {
+  local bus="$1"
+  local dev="/dev/i2c-${bus}"
+  [[ -e "$dev" ]] || return 1
+
+  # sysfs quick check (covers cases where i2cdetect shows "UU")
+  for a in "${ADDRS[@]}"; do
+    if [[ -e "/sys/bus/i2c/devices/${bus}-00${a}" ]]; then
+      log "bus ${bus}: found in sysfs at 0x${a}"
+      return 0
+    fi
+  done
+
+  # i2cdetect scan (preferred)
+  if command -v i2cdetect >/dev/null 2>&1; then
+    local out
+    out="$(i2cdetect -y -r "$bus" 0x3c 0x3d 2>/dev/null)" || return 2
+    log "bus ${bus}: i2cdetect output:"
+    log "$out"
+    echo "$out" | grep -Eiq '\b(3c|3d|UU)\b' && return 0
+    return 1
+  fi
+
+  # Fallback: python + smbus/smbus2 (ACK test)
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$bus" <<'PY'
+import sys, errno
+bus = int(sys.argv[1])
+addrs = (0x3C, 0x3D)
+
+try:
+    try:
+        from smbus2 import SMBus
+    except ImportError:
+        from smbus import SMBus  # type: ignore
+except Exception:
+    sys.exit(2)
+
+try:
+    with SMBus(bus) as b:
+        for addr in addrs:
+            try:
+                b.write_quick(addr)
+                sys.exit(0)
+            except OSError as e:
+                if getattr(e, "errno", None) in (errno.EOPNOTSUPP, errno.ENOTTY, 95):
+                    try:
+                        b.write_byte(addr, 0x00)
+                        sys.exit(0)
+                    except OSError:
+                        pass
+    sys.exit(1)
+except (FileNotFoundError, PermissionError):
+    sys.exit(2)
+PY
+    return $?
+  fi
+
+  return 2
+}
+
+# Decide which buses to scan
+buses=()
+if [[ -n "$BUS_ARG" ]]; then
+  buses=("$BUS_ARG")
+else
+  # auto-discover available i2c buses
+  for dev in /dev/i2c-*; do
+    [[ -e "$dev" ]] || continue
+    buses+=("${dev##*/i2c-}")
+  done
+fi
+
+[[ "${#buses[@]}" -gt 0 ]] || exit 2
+
+log "Scanning buses: ${buses[*]}"
+any_i2c=0
+for b in "${buses[@]}"; do
+  rc=0
+  scan_bus "$b" || rc=$?
+  case "$rc" in
+    0) exit 0 ;;
+    1) any_i2c=1 ;;
+    2) log "bus ${b}: unavailable or missing tools/permissions" ;;
+    *) ;;
+  esac
+done
+
+# If we had at least one usable bus and none matched -> 1, else 2
+[[ "$any_i2c" -eq 1 ]] && exit 1
+exit 2

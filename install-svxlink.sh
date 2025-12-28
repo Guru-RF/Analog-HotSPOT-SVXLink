@@ -130,6 +130,10 @@ run "systemctl enable hotspot-online"
 say "Installing systemd services"
 run "systemctl enable svxlink"
 
+say "Install hostpot oled display"
+run "apt install -y fonts-terminus fonts-terminus-otb fonts-dejavu fonts-noto-mono"
+sudo apt install -y fonts-spleen
+
 say "Cleanup system"
 run "sudo apt clean"
 run "sudo apt autoclean"

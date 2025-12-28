@@ -1,0 +1,15 @@
+[Unit]
+Description=SVX OLED display (start only if SSD1306 is present)
+After=multi-user.target
+Wants=multi-user.target
+
+[Service]
+Type=simple
+# If the checker exits non-zero, systemd SKIPS starting (does not fail the unit)
+ExecCondition=/usr/sbin/check_ssd1306
+ExecStart=/usr/bin/python3 /usr/sbin/svxoled.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

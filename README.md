@@ -6,7 +6,7 @@
 
    https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
-3. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply**.
+3. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply** (usb port on the far right of the device).
 
 4. Wait for it to boot up.
 

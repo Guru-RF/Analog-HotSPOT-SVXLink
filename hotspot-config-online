@@ -51,9 +51,10 @@ OLDFREQ=$(grep freq /usr/sbin/hotspot 2>/dev/null | head -n1 | awk '{ print $8 }
 
 # Read old CTCSS *TX* tone from [Tx1] section in svxlink.conf
 OLDCTCSS=$(
-  sed -n '/^\[Tx1\]/,/^\[/{/^CTCSS_FQ=/p}' /etc/svxlink/svxlink.conf 2>/dev/null \
-  | head -n1 \
-  | cut -d'=' -f2
+  sed -n \
+    's/.*--ctcss[[:space:]]*\([0-9.]\+\),.*/\1/p' \
+    /usr/sbin/hotspot \
+  | head -n1
 )
 
 OLDCTCSSMAPPING=$(grep CTCSS_TO_TG /etc/svxlink/svxlink.conf 2>/dev/null | head -n 1 | tr "=" "\n" | tail -n 1)

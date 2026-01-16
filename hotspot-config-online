@@ -277,7 +277,7 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--SVXCALL--/${SVXCALL}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--SVXEMAIL--/$(printf '%s' "$SVXEMAIL" | sed 's/@/\\@/g')/g" /etc/svxlink/svxlink.conf
   # Write selected TX CTCSS into placeholder in svxlink.conf
-  perl -i -pe "s/--TXCTCSS--/${CTCSSTX}/g" /etc/svxlink/svxlink.conf
+  #perl -i -pe "s/--TXCTCSS--/${CTCSSTX}/g" /etc/svxlink/svxlink.conf
 
   perl -i -pe "s/--LOCATION--/${LOCATION}/g" /etc/svxlink/node_info.json
   perl -i -pe "s/--LAT--/${LAT}/g" /etc/svxlink/node_info.json
@@ -290,7 +290,7 @@ if [ $RESULT -eq 0 ]; then
   say "Configuring hotspot"
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
-  echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} --squelch 8" >> /usr/sbin/hotspot
+  echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},0 --squelch 8" >> /usr/sbin/hotspot
   echo "sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
   echo "sa818 --port /dev/ttyAMA0 volume --level ${CPVOL}" >> /usr/sbin/hotspot
   chmod +x /usr/sbin/hotspot

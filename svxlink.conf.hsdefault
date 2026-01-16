@@ -90,12 +90,13 @@ DTMF_DIGIT_PWR=-15
 #CTCSS_LEVEL=-24
 
 LADSPA_PLUGINS=hpf:300,@Tx1_Compressor
+
 [Tx1_Compressor]
 LABEL=tap_dynamics_m
-Attack=4
-Release=500
-Offset Gain=10
-Makeup Gain=12
+Attack=2
+Release=120
+Offset Gain=6
+Makeup Gain=6
 Function=13
 
 [LocationInfo]

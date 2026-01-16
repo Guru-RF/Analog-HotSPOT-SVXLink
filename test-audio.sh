@@ -26,6 +26,7 @@ cd /tmp
 rm -f ImperialMarch60.wav
 wget https://github.com/Guru-RF/Analog-HotSPOT-SVXLink/raw/refs/heads/main/ImperialMarch60.wav
 gpioset gpiochip0 16=0
+sleep 30
 aplay ImperialMarch60.wav
 gpioset gpiochip0 16=1
 

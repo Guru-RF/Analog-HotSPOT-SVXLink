@@ -1,7 +1,7 @@
 #!/bin/bash
 
 systemctl stop svxlink
-sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency 434.925 --squelch 8
+sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency 434.925 --squelch 8
 sa818 --port /dev/ttyAMA0 filters --emphasis enable --highpass enable --lowpass enable
 sa818 --port /dev/ttyAMA0 volume --level 1
 # audio to radio Module
@@ -26,7 +26,7 @@ cd /tmp
 rm -f ImperialMarch60.wav
 wget https://github.com/Guru-RF/Analog-HotSPOT-SVXLink/raw/refs/heads/main/ImperialMarch60.wav
 gpioset gpiochip0 16=0
-sleep 30
+sleep 10
 aplay ImperialMarch60.wav
 gpioset gpiochip0 16=1
 

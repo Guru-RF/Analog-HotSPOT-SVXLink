@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# curl -fsSL https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/refs/heads/main/test.sh | sudo bash
+
 systemctl stop svxlink
 sa818 --port /dev/ttyAMA0 radio --bw 1 --frequency 434.925 --squelch 8
 sa818 --port /dev/ttyAMA0 filters --emphasis enable --highpass enable --lowpass enable

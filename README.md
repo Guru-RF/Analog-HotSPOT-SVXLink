@@ -25,8 +25,8 @@
 
         sudo nmtui
 
-   **Note:** When you **save** a new Wi-Fi network, the hotspot may **immediately connect to it** and disable the **AccessPopup** access point. Your phone/PC will then **lose the AccessPopup Wi-Fi** connection (this is normal).  
-   Just connect your phone/PC to **your own Wi-Fi network**, then reopen the portal via:
+   **Note:** When you **save** a new Wi-Fi network, the hotspot may **immediately connect to it** and disable the **AccessPopup** access point. Your PC will then **lose the AccessPopup Wi-Fi** connection (this is normal).  
+   Just connect your PC to **your own Wi-Fi network**, then reopen the portal via:
 
    - http://hotspot.local  
      (or use the announced IP address if mDNS is not available)

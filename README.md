@@ -258,7 +258,9 @@ Recommended defaults we use:
 - **2 m:** 145.250 MHz  
 - **CTCSS:** 88.5 Hz
 
-Use a tone not locally used.
+Use a tone/frequency not locally used.
+
+For the CTCSS TX tone best to pick on between 67 and 85.4 (best audio quality)
 
 ---
 

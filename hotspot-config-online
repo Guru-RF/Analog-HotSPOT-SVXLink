@@ -174,7 +174,7 @@ CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
 gum style --foreground 212 "${CTCSSMAPPING}"
 
 # Always ask for CTCSS TX tone (from Tx1 CTCSS_FQ)
-gum style --foreground "#04B575" "Enter CTCSS TX tone:"
+gum style --foreground "#04B575" "Enter CTCSS TX tone (default 67):"
 if [[ "${OLDCTCSS}" == "" || "${OLDCTCSS}" == "--TXCTCSS--" ]]; then
   OLDCTCSS="88.5"
 fi
@@ -274,7 +274,7 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
   CTCSSLIST=$(echo "${CTCSSMAPPING}" | tr ',' '\n' | cut -d':' -f1 | tr '\n' ',' | sed 's/,$//')
-  perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
+  perl -i -pe "s/--CTCSSLIST--/${CTCSSLIST}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--TGS--/${TGS}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/node_info.json
   perl -i -pe "s/--SVXCALL--/${SVXCALL}/g" /etc/svxlink/svxlink.conf

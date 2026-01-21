@@ -2,7 +2,7 @@
 
 # Quick Start
 
-1. Flash the image to an SD card:  (The device already includes a freshly flashed SD card — you can skip this step and go straight to step 2.)
+1. Flash the image to an SD card (https://etcher.balena.io/#download-etcher):  (The device already includes a freshly flashed SD card — you can skip this step and go straight to step 2.)
 
    https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 

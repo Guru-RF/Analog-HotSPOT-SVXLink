@@ -97,6 +97,12 @@ https://storage.googleapis.com/rf-guru/rpi-images/hotspot-2025-12-09.img.gz
 
 ---
 
+# Mailinglist for software updates
+
+https://listmonk.rf.guru/subscription/form
+
+---
+
 # Wi-Fi Setup (AccessPopup)
 
 1. Connect to:

@@ -286,6 +286,12 @@ Edit talkgroup buttons:
 
 ---
 
+# 2nd USB port
+
+The second USB port can be used for ethernet, or to attach an AMBE dongle for Bridging to DMR !
+
+---
+
 # SVXLink Hotspot in Action
 
 https://github.com/Guru-RF/SVXSpot/assets/1251767/50dd4366-8439-4067-83b5-5866d0adca77

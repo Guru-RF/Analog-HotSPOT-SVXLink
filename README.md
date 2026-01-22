@@ -9,19 +9,20 @@
 3. Insert the SD card into the **Raspberry Pi Zero 2W** and power it with a **stable 5V supply** (usb port on the far right of the device).
 
 4. Wait for it to boot up.
+   While waiting for boot you can subscribe to our RF Guru's Analog Hotspot mailinglist. https://listmonk.rf.guru/subscription/form
 
-5. Connect to the Wi-Fi SSID:  
+6. Connect to the Wi-Fi SSID:  
    **AccessPopup**  
    Password: **1234567890**
 
-6. Open the dashboard:  
+7. Open the dashboard:  
    http://192.168.50.5/ (or http://hotspot.local)
 
-7. Open **Shell** → log in:  
+8. Open **Shell** → log in:  
    - Username: `hotspot`  
    - Password: `hotspot`
 
-8. Configure Wi-Fi (add as many networks you want, but **do not remove AccessPopup**):
+9. Configure Wi-Fi (add as many networks you want, but **do not remove AccessPopup**):
 
         sudo nmtui
 

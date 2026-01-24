@@ -26,17 +26,19 @@
 
         sudo nmtui
 
+   https://youtu.be/EJn0JkStWuY
+
    **Note:** When you **save** a new Wi-Fi network, the hotspot may **immediately connect to it** and disable the **AccessPopup** access point. Your PC will then **lose the AccessPopup Wi-Fi** connection (this is normal).  
    Just connect your PC to **your own Wi-Fi network**, then reopen the portal via:
 
    - http://hotspot.local  
      (or use the announced IP address if mDNS is not available)
 
-10. Reboot:
+11. Reboot:
 
         sudo reboot
 
-11. After reboot, connect via:  
+12. After reboot, connect via:  
    - http://hotspot.local  
    **or**  
    - the **spoken IP address** announced over RF (434.925 MHz — FM Narrow | 145.925 MHz — FM Narrow)

@@ -40,6 +40,7 @@
    - http://hotspot.local  
    **or**  
    - the **spoken IP address** announced over RF (434.925 MHz — FM Narrow | 145.925 MHz — FM Narrow)
+   - If this does not work, check whether the AccessPopup network is still being broadcast over Wi-Fi. If it is, something went wrong while entering your network details. Go back to point 6 and repeat the setup.
 
 11. Start configuration:
 

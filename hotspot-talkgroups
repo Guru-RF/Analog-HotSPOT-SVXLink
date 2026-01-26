@@ -37,9 +37,9 @@ fi
 
 gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Talkgroups"
 
-gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...):"
+gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4):"
 if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
-  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000,77.0:50,79.7:51,82.5:52,85.4:53,88.5:54,91.5:55"
+  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
 fi
 CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
 gum style --foreground 212 "${CTCSSMAPPING}"

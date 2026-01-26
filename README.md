@@ -158,11 +158,11 @@ https://www.youtube.com/watch?v=bKF9JRo0ORM
 
 # Supported PI's
 
-Raspberry PI4
-Raspberry PI5
-Raspberry PiZero 2W
-Raspberry Compute Module 4
-Raspberry Compute Module 5
+- Raspberry PI4
+- Raspberry PI5
+- Raspberry PiZero 2W
+- Raspberry Compute Module 4
+- Raspberry Compute Module 5
 
 ---
 

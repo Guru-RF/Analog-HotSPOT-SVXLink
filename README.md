@@ -50,6 +50,8 @@
 sudo hotspot-config
 ```
 
+(video demo https://youtu.be/bKF9JRo0ORM?t=125)
+
 11. For Belgian users, set the domain:
 
     be.svx.link

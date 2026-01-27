@@ -11,7 +11,7 @@
 4. Wait for it to boot up.
    While waiting for boot you can subscribe to our RF Guru's Analog Hotspot mailinglist. https://listmonk.rf.guru/subscription/form
 
-6. Connect to the Wi-Fi SSID:  
+6. Connect to the Wi-Fi AccessPoint of the Hotspot SSID:  
    **AccessPopup**  
    Password: **1234567890**
 

@@ -22,6 +22,9 @@
    - Username: `hotspot`  
    - Password: `hotspot`
 
+   ![screenshot](https://github.com/user-attachments/assets/27ffa551-375e-4ca4-b025-78ead10c1f55)
+
+
 9. Configure Wi-Fi (add as many networks you want, but **do not remove AccessPopup**):
 
         sudo nmtui

@@ -1,0 +1,320 @@
+#!/usr/bin/env python3
+import argparse
+import glob
+import re
+import sys
+import time
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
+
+import serial
+from serial.tools import list_ports
+
+
+@dataclass
+class PortCandidate:
+    device: str
+    description: str
+    hwid: str
+    vid: Optional[int]
+    pid: Optional[int]
+    serial_number: Optional[str]
+    location: Optional[str]
+
+
+FINAL_OK = re.compile(r'^\s*OK\s*$', re.IGNORECASE)
+FINAL_ERROR = re.compile(r'^\s*(ERROR|\+CME ERROR:|\+CMS ERROR:)\s*', re.IGNORECASE)
+
+QCFG_USBNET = re.compile(r'^\s*\+QCFG:\s*"usbnet"\s*,\s*(\d+)\s*', re.IGNORECASE)
+
+
+def now_ms() -> int:
+    return int(time.time() * 1000)
+
+
+def list_serial_devices() -> List[PortCandidate]:
+    ports = []
+    for p in list_ports.comports():
+        ports.append(
+            PortCandidate(
+                device=p.device,
+                description=getattr(p, "description", "") or "",
+                hwid=getattr(p, "hwid", "") or "",
+                vid=getattr(p, "vid", None),
+                pid=getattr(p, "pid", None),
+                serial_number=getattr(p, "serial_number", None),
+                location=getattr(p, "location", None),
+            )
+        )
+    # Also include raw /dev/ttyUSB* & /dev/ttyACM* in case pyserial misses them
+    for pat in ("/dev/ttyUSB*", "/dev/ttyACM*"):
+        for dev in glob.glob(pat):
+            if not any(x.device == dev for x in ports):
+                ports.append(PortCandidate(dev, "", "", None, None, None, None))
+    # Stable ordering
+    ports.sort(key=lambda x: x.device)
+    return ports
+
+
+def open_serial(dev: str, baud: int, timeout: float) -> serial.Serial:
+    ser = serial.Serial(
+        port=dev,
+        baudrate=baud,
+        bytesize=serial.EIGHTBITS,
+        parity=serial.PARITY_NONE,
+        stopbits=serial.STOPBITS_ONE,
+        timeout=timeout,
+        write_timeout=timeout,
+        rtscts=False,
+        dsrdtr=False,
+        xonxoff=False,
+    )
+    # Some modems want DTR asserted/deasserted; keep default but ensure buffers are clean.
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
+    return ser
+
+
+def read_lines_until_final(ser: serial.Serial, deadline_ms: int) -> Tuple[List[str], Optional[str]]:
+    """
+    Read lines until OK/ERROR (final) or deadline. Returns (lines, final_status)
+    final_status is "OK", "ERROR", or None if timed out.
+    """
+    lines: List[str] = []
+    final: Optional[str] = None
+
+    while now_ms() < deadline_ms:
+        raw = ser.readline()
+        if not raw:
+            continue
+        try:
+            line = raw.decode(errors="ignore").strip("\r\n")
+        except Exception:
+            continue
+        if line == "":
+            continue
+
+        lines.append(line)
+
+        if FINAL_OK.match(line):
+            final = "OK"
+            break
+        if FINAL_ERROR.match(line):
+            final = "ERROR"
+            break
+
+    return lines, final
+
+
+def send_at(ser: serial.Serial, cmd: str, timeout_s: float = 2.0) -> Tuple[List[str], Optional[str]]:
+    """
+    Send AT command (no trailing CR needed) and read response until final OK/ERROR.
+    """
+    # Wake up / sync: sometimes first command is ignored unless we send a bare "AT"
+    full = (cmd.strip() + "\r").encode()
+    ser.write(full)
+    ser.flush()
+
+    deadline = now_ms() + int(timeout_s * 1000)
+    return read_lines_until_final(ser, deadline)
+
+
+def looks_like_at_port(ser: serial.Serial) -> bool:
+    # Try a couple of "AT" attempts (some ports are chatty/busy)
+    for _ in range(3):
+        lines, final = send_at(ser, "AT", timeout_s=1.5)
+        if final == "OK":
+            return True
+        time.sleep(0.2)
+    return False
+
+
+def get_usbnet_mode(ser: serial.Serial) -> Optional[int]:
+    lines, final = send_at(ser, 'AT+QCFG="usbnet"?', timeout_s=2.5)
+    if final != "OK":
+        return None
+    for line in lines:
+        m = QCFG_USBNET.match(line)
+        if m:
+            return int(m.group(1))
+    return None
+
+
+def set_usbnet_mode(ser: serial.Serial, mode: int) -> bool:
+    lines, final = send_at(ser, f'AT+QCFG="usbnet",{mode}', timeout_s=3.5)
+    return final == "OK"
+
+
+def reboot_module(ser: serial.Serial) -> bool:
+    # Many modems respond OK then immediately drop the port.
+    _, final = send_at(ser, "AT+CFUN=1,1", timeout_s=3.5)
+    return final == "OK"
+
+
+def find_working_at_port(
+    preferred: Optional[str],
+    baud: int,
+    timeout: float,
+    verbose: bool
+) -> Tuple[Optional[PortCandidate], Optional[serial.Serial]]:
+    candidates = list_serial_devices()
+
+    if preferred:
+        # Force just that port first
+        candidates = [c for c in candidates if c.device == preferred] + [c for c in candidates if c.device != preferred]
+
+    for c in candidates:
+        try:
+            ser = open_serial(c.device, baud=baud, timeout=timeout)
+        except Exception as e:
+            if verbose:
+                print(f"[skip] {c.device}: cannot open ({e})")
+            continue
+
+        try:
+            if looks_like_at_port(ser):
+                if verbose:
+                    print(f"[ok] AT responds on {c.device} ({c.description})")
+                return c, ser
+            else:
+                if verbose:
+                    print(f"[skip] {c.device}: no AT response")
+        except Exception as e:
+            if verbose:
+                print(f"[skip] {c.device}: error while probing ({e})")
+        finally:
+            # Only close if not selected
+            if ser and (ser.is_open):
+                try:
+                    ser.close()
+                except Exception:
+                    pass
+
+    return None, None
+
+
+def wait_for_reenumeration(
+    before: List[PortCandidate],
+    target: PortCandidate,
+    timeout_s: int,
+    verbose: bool
+) -> bool:
+    """
+    Wait for the modem to disappear and then reappear (best-effort).
+    Uses serial_number or vid/pid+location if available.
+    """
+    start = time.time()
+
+    def same_device(p: PortCandidate) -> bool:
+        if target.serial_number and p.serial_number:
+            return p.serial_number == target.serial_number
+        # Fallback: VID/PID + USB location is often stable
+        if target.vid and target.pid and p.vid and p.pid and target.location and p.location:
+            return (p.vid, p.pid, p.location) == (target.vid, target.pid, target.location)
+        # Worst fallback: device node (may change after reboot)
+        return p.device == target.device
+
+    saw_gone = False
+
+    while (time.time() - start) < timeout_s:
+        current = list_serial_devices()
+        present = any(same_device(p) for p in current)
+        if not present:
+            saw_gone = True
+            if verbose:
+                print("[info] modem port disappeared (reboot in progress)")
+        if saw_gone and present:
+            if verbose:
+                print("[info] modem port reappeared")
+            return True
+        time.sleep(0.5)
+
+    return False
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(
+        description="Auto-detect modem AT port, ensure AT+QCFG=\"usbnet\" is 0, then reboot with AT+CFUN=1,1."
+    )
+    ap.add_argument("--port", help="Serial device to use (e.g. /dev/ttyUSB2). If omitted, auto-detect.")
+    ap.add_argument("--baud", type=int, default=115200, help="Baud rate (default: 115200).")
+    ap.add_argument("--timeout", type=float, default=0.8, help="Serial read timeout seconds (default: 0.8).")
+    ap.add_argument("--no-set", action="store_true", help="Only query usbnet mode; do not change it.")
+    ap.add_argument("--no-reboot", action="store_true", help="Do not reboot the module.")
+    ap.add_argument("--wait", type=int, default=30, help="Seconds to wait for re-enumeration after reboot (default: 30).")
+    ap.add_argument("--verbose", action="store_true", help="Verbose logging.")
+    args = ap.parse_args()
+
+    before_ports = list_serial_devices()
+
+    cand, ser = find_working_at_port(args.port, args.baud, args.timeout, args.verbose)
+    if not cand or not ser:
+        print("ERROR: Could not find a working AT command port.")
+        print("Tip: run with sudo or add your user to the 'dialout' group and re-login.")
+        return 2
+
+    # Re-open the selected port (probe function closed it)
+    try:
+        ser = open_serial(cand.device, baud=args.baud, timeout=args.timeout)
+    except Exception as e:
+        print(f"ERROR: Failed to open selected port {cand.device}: {e}")
+        return 2
+
+    try:
+        # Final sanity
+        if not looks_like_at_port(ser):
+            print(f"ERROR: {cand.device} stopped responding to AT.")
+            return 2
+
+        mode = get_usbnet_mode(ser)
+        if mode is None:
+            print('ERROR: AT+QCFG="usbnet"? failed or returned an unexpected response.')
+            print("This command is typical for Quectel modules. If you're not using Quectel, it may not exist.")
+            return 3
+
+        print(f'AT port: {cand.device}')
+        print(f'usbnet mode: {mode}')
+
+        if mode != 0:
+            if args.no_set:
+                print("No changes made (--no-set).")
+            else:
+                print('Setting: AT+QCFG="usbnet",0')
+                if not set_usbnet_mode(ser, 0):
+                    print("ERROR: Failed to set usbnet mode to 0.")
+                    return 4
+                # Re-query to confirm
+                mode2 = get_usbnet_mode(ser)
+                print(f'usbnet mode now: {mode2 if mode2 is not None else "unknown"}')
+        else:
+            print("No change needed (already usbnet,0).")
+
+        if args.no_reboot:
+            print("Skipping reboot (--no-reboot).")
+            return 0
+
+        print("Rebooting: AT+CFUN=1,1")
+        ok = reboot_module(ser)
+        if not ok:
+            print("WARNING: Did not receive OK to AT+CFUN=1,1 (module may still reboot).")
+        # Port will likely drop immediately
+    finally:
+        try:
+            ser.close()
+        except Exception:
+            pass
+
+    # Wait for re-enumeration (best-effort)
+    if args.wait > 0:
+        if wait_for_reenumeration(before_ports, cand, args.wait, args.verbose):
+            print("Re-enumeration detected. Done.")
+            return 0
+        else:
+            print("Reboot command sent. Re-enumeration not detected within timeout (this can be normal).")
+            return 0
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -13,7 +13,5 @@ say () {
 
 
 say "Installing Prerequisites"
-run "rm -f /usr/lib/python3.11/EXTERNALLY-MANAGED"
-run "python3 -m pip install pyserial"
 run "apt -y install libqmi-utils udhcpc"
 

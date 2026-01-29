@@ -3,4 +3,5 @@ Description=Disable WLAN after boot delay
 
 [Service]
 Type=oneshot
+ExecStart=/usr/bin/logger -t disable-wlan "Disabling Wi-Fi"
 ExecStart=/sbin/ip link set wlan0 down

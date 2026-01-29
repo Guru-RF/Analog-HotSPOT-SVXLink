@@ -1,0 +1,10 @@
+[Unit]
+Description=Run disable-wlan 5 minutes after boot
+
+[Timer]
+OnBootSec=5min
+AccuracySec=10s
+Unit=disable-wlan.service
+
+[Install]
+WantedBy=timers.target

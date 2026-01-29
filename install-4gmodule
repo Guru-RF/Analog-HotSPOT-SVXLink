@@ -26,10 +26,12 @@ run "chmod +x /usr/sbin/hotspot-4g"
 run "wget -O /usr/sbin/hotspot-4g-config https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g-config"
 run "chmod +x /usr/sbin/hotspot-4g-config"
 run "wget -O /etc/systemd/system/hotspot-4g.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g.service"
+run "wget -O /etc/systemd/system/disable-wlan.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/disable-wlan.service"
+run "wget -O /etc/systemd/system/disable-wlan.timer https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/disable-wlan.timer"
 run "systemctl daemon-reload"
 
 say "Starting 4G"
-run "sudo systemctl enable NetworkManager-wait-online.service"
+run "systemctl enable disable-wlan.timer"
 run "systemctl enable hotspot-4g.service"
 
 say "Reboot the system (sudo reboot)"

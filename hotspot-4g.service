@@ -1,7 +1,7 @@
 [Unit]
 Description=Hotspot 4G bring-up
-Wants=network-online.target
-After=network-online.target
+After=network.target remote-fs.target syslog.target time.target
+After=wm8960-soundcard.service
 ConditionPathIsExecutable=/usr/sbin/hotspot-4g
 
 [Service]

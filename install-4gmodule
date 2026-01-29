@@ -20,8 +20,11 @@ run "apt -y install libqmi-utils udhcpc"
 
 say "Installing 4G"
 run "cd /tmp"
+run "wget -O /etc/hotspot-4g.conf https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g.conf"
 run "wget -O /usr/sbin/hotspot-4g https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g"
 run "chmod +x /usr/sbin/hotspot-4g"
+run "wget -O /usr/sbin/hotspot-4g-config https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g-config"
+run "chmod +x /usr/sbin/hotspot-4g-config"
 run "wget -O /etc/systemd/system/hotspot-4g.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g.service"
 run "systemctl daemon-reload"
 

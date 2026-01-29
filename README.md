@@ -83,10 +83,10 @@ for the 4G version install the module via:
 sudo install-4gmodule
 ```
 
-Modify APN
+Configure another provider
 
 ```bash
-sudo 4g-config
+sudo hotspot-4g-config
 ```
 
 ---

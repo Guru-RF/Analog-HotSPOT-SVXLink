@@ -3,4 +3,4 @@ Description=Disable WLAN after boot delay
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/rfkill block wifi
+ExecStart=/sbin/ip link set wlan0 down

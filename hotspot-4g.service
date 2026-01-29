@@ -2,7 +2,6 @@
 Description=Hotspot 4G bring-up
 After=network.target remote-fs.target syslog.target time.target
 After=wm8960-soundcard.service
-ConditionPathIsExecutable=/usr/sbin/hotspot-4g
 
 [Service]
 Type=oneshot

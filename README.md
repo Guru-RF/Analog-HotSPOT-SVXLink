@@ -43,7 +43,7 @@
    - the **spoken IP address** announced over RF (434.925 MHz — FM Narrow | 145.925 MHz — FM Narrow)
    - If this does not work, check whether the AccessPopup network is still being broadcast over Wi-Fi. If it is, something went wrong while entering your network details. Go back to point 6 and repeat the setup.
 
-11. Start configuration:
+13. Start configuration:
 
 ```bash
 sudo hotspot-config
@@ -51,26 +51,43 @@ sudo hotspot-config
 
 (video demo https://youtu.be/bKF9JRo0ORM?t=125)
 
-11. For Belgian users, set the domain:
+14. For Belgian users, set the domain:
 
     be.svx.link
 
-12. After initial configuration, your **SVXReflector sysop must sign your certificate**.  
+15. After initial configuration, your **SVXReflector sysop must sign your certificate**.  
     Once signed, your hotspot is fully operational.
 
-13. Continue setup:
+16. Continue setup:
 
 ```bash
 sudo hotspot-options
 ```
 
-14. Belgian users can update talkgroups + button presets:
+17. Belgian users can update talkgroups + button presets:
 
 ```bash
 sudo hotspot-on-webportal
 ```
 
-15. You are now **ready to rumble** 🎙️📡
+18. You are now **ready to rumble** 🎙️📡
+
+---
+
+## Optional
+
+for the 4G version install the module via:
+(it's default configured for the alwaysonnected provider)
+
+```bash
+sudo install-4gmodule
+```
+
+Modify APN
+
+```bash
+sudo 4g-config
+```
 
 ---
 

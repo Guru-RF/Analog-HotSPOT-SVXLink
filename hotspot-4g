@@ -1,0 +1,9 @@
+#!/bin/bash
+
+ip link set wwan0 down
+echo Y > /sys/class/net/wwan0/qmi/raw_ip
+for _ in $(seq 1 600); do /usr/bin/test -c /dev/cdc-wdm0 && break; /bin/sleep 1; done
+for _ in $(seq 1 600); do /usr/bin/qmicli -d /dev/cdc-wdm0 --nas-get-signal-strength && break; /bin/sleep 1; done
+ip link set wwan0 up
+qmicli -p -d /dev/cdc-wdm0 --device-open-net='net-raw-ip|net-no-qos-header' --wds-start-network="apn='globaldata.iot',ip-type=4" --client-no-release-cid
+udhcpc -q -f -i wwan0

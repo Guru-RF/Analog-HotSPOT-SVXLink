@@ -1,0 +1,32 @@
+#!/bin/bash
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+
+say "Installing Prerequisites"
+run "apt -y update"
+run "apt -y upgrade"
+run "apt -y install libqmi-utils udhcpc"
+
+
+say "Installing 4G"
+run "cd /tmp"
+run "wget https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g"
+run "mv hotspot-4g /usr/sbin/hotspot-4g"
+run "chmod +x /usr/sbin/hotspot-4g"
+run "wget https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g.service"
+run "mv hotspot-4g.service /etc/systemd/system/hotspot-4g.service"
+run "systemctl daemon-reload"
+
+say "Starting 4G"
+run "systemctl enable --now hotspot-4g.service"
+

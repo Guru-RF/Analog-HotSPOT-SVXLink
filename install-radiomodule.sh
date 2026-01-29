@@ -18,6 +18,9 @@ run "apt -y upgrade"
 say "Installing Prerequisites"
 run "apt -y install python3-pip git python3-pyaudio python3-scipy"
 
+say "Installing 4G Prerequisites"
+run "apt -y install libqmi-utils udhcpc"
+
 say "Installing SA818 Control Software"
 run "rm -rf /usr/lib/python3.11/EXTERNALLY-MANAGED"
 run "pip3 install sa818"

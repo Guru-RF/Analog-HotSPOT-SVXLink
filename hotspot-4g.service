@@ -1,0 +1,16 @@
+[Unit]
+Description=Hotspot 4G bring-up
+Wants=network-online.target
+After=network-online.target
+ConditionPathIsExecutable=/usr/sbin/hotspot-4g
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/hotspot-4g
+RemainAfterExit=yes
+TimeoutStartSec=300
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

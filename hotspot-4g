@@ -1,108 +1,44 @@
 #!/bin/bash
 set -euo pipefail
 
-TERM=xterm-256color
-
-run() {
-  local exec="$1"
-  printf "\x1b[38;5;104m --> %s\x1b[39m\n" "$exec"
-  eval "$exec"
-}
-
-say () {
-  local msg="$1"
-  printf "\x1b[38;5;220m%s\x1b[38;5;255m\n" "$msg"
-}
-
-need_root() {
-  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
-    say "Please run as root: sudo $0"
-    exit 1
-  fi
-}
-
-have_gum() {
-  command -v gum >/dev/null 2>&1
-}
-
 CONF="/etc/hotspot-4g.conf"
 
-load_conf() {
-  # defaults
-  APN="globaldata.iot"
-  IP_TYPE="4"
-  AUTH=""
-  APN_USER=""
-  APN_PASS=""
+# defaults
+APN="globaldata.iot"
+IP_TYPE="4"
+AUTH=""
+APN_USER=""
+APN_PASS=""
 
-  if [[ -f "$CONF" ]]; then
-    # shellcheck disable=SC1090
-    source "$CONF" || true
-  fi
-}
+if [[ -f "$CONF" ]]; then
+  # shellcheck disable=SC1090
+  source "$CONF" || true
+fi
 
-write_conf() {
-  umask 077
-  cat > "$CONF" <<EOF
-# hotspot-4g config
-APN="${APN}"
-IP_TYPE="${IP_TYPE}"         # 4 or 6
-AUTH="${AUTH}"               # "", PAP, CHAP, BOTH
-APN_USER="${APN_USER}"       # optional
-APN_PASS="${APN_PASS}"       # optional (plaintext!)
-EOF
-  chmod 600 "$CONF"
-  say "Saved: $CONF (mode 600)"
-}
+ip link set wwan0 down
+echo Y > /sys/class/net/wwan0/qmi/raw_ip
 
-prompt_with_gum() {
-  gum style --foreground "#04B575" "Hotspot 4G APN configuration"
+for _ in $(seq 1 600); do /usr/bin/test -c /dev/cdc-wdm0 && break; /bin/sleep 1; done
+for _ in $(seq 1 600); do /usr/bin/qmicli -d /dev/cdc-wdm0 --nas-get-signal-strength && break; /bin/sleep 1; done
 
-  APN="$(gum input --prompt "APN: " --value "${APN}")"
+ip link set wwan0 up
 
-  IP_TYPE="$(gum choose "4" "6")"
+# Build WDS start string; only include creds/auth when non-empty
+WDS="apn='${APN}',ip-type=${IP_TYPE}"
 
-  AUTH="$(gum choose "" "PAP" "CHAP" "BOTH")"
+if [[ -n "${AUTH}" ]]; then
+  WDS="${WDS},auth=${AUTH}"
+fi
+if [[ -n "${APN_USER}" ]]; then
+  WDS="${WDS},username='${APN_USER}'"
+fi
+if [[ -n "${APN_PASS}" ]]; then
+  WDS="${WDS},password='${APN_PASS}'"
+fi
 
-  APN_USER="$(gum input --prompt "APN username (optional): " --value "${APN_USER}")"
+qmicli -p -d /dev/cdc-wdm0 \
+  --device-open-net='net-raw-ip|net-no-qos-header' \
+  --wds-start-network="${WDS}" \
+  --client-no-release-cid
 
-  # gum supports --password on recent versions; fallback if not supported
-  if gum input --help 2>/dev/null | grep -q -- "--password"; then
-    APN_PASS="$(gum input --password --prompt "APN password (optional): " --value "${APN_PASS}")"
-  else
-    printf "APN password (optional): "
-    read -r -s APN_PASS
-    printf "\n"
-  fi
-}
-
-prompt_plain() {
-  say "gum not found; using plain prompts."
-
-  read -r -p "APN [${APN}]: " v; [[ -n "$v" ]] && APN="$v"
-  read -r -p "IP_TYPE (4/6) [${IP_TYPE}]: " v; [[ -n "$v" ]] && IP_TYPE="$v"
-  read -r -p "AUTH (empty/PAP/CHAP/BOTH) [${AUTH}]: " v; [[ -n "$v" ]] && AUTH="$v"
-  read -r -p "APN username (optional) [${APN_USER}]: " v; [[ -n "$v" ]] && APN_USER="$v"
-  read -r -s -p "APN password (optional) [hidden]: " v; echo; [[ -n "$v" ]] && APN_PASS="$v"
-}
-
-main() {
-  need_root
-  load_conf
-
-  if have_gum; then
-    prompt_with_gum
-  else
-    prompt_plain
-  fi
-
-  # sanitize
-  [[ "$IP_TYPE" != "4" && "$IP_TYPE" != "6" ]] && { say "Invalid IP_TYPE: $IP_TYPE (must be 4 or 6)"; exit 1; }
-
-  write_conf
-
-  say "Optional: restart your unit"
-  say "  systemctl restart hotspot-4g.service"
-}
-
-main "$@"
+udhcpc -q -f -i wwan0

@@ -28,5 +28,7 @@ run "mv hotspot-4g.service /etc/systemd/system/hotspot-4g.service"
 run "systemctl daemon-reload"
 
 say "Starting 4G"
+run "sudo systemctl enable --now NetworkManager-wait-online.service"
 run "systemctl enable --now hotspot-4g.service"
 
+say "Reboot the system (sudo reboot)"

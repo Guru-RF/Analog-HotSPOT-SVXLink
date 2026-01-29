@@ -301,6 +301,31 @@ Edit talkgroup buttons:
 
 ---
 
+# Raspberry Pi Connect
+
+Connect remotely to your hotspot.
+
+https://connect.raspberrypi.com
+
+Update the system:
+
+```bash
+    sudo apt -y update
+    sudo apt -y upgrade
+    sudo reboot
+```
+
+Install rpi-connect
+
+```bash
+    sudo apt -y install rpi-connect-lite
+    loginctl enable-linger
+    rpi-connect on
+    rpi-connect signin
+```
+
+---
+
 # 2nd USB port
 
 The second USB port can be used for ethernet, or to attach an AMBE dongle for Bridging to DMR !

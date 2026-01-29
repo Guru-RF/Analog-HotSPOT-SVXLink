@@ -342,6 +342,10 @@ EOF
   say "Downloading hotspot-talkgroups"
   run "wget -O /usr/sbin/hotspot-talkgroups https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-talkgroups > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-talkgroups"
+  
+  say "Downloading install-4gmodule"
+  run "wget -O /usr/sbin/install-4gmodule https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-4gmodule > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/install-4gmodule"
 
   say "--> Done"
   say ""

@@ -1,7 +1,9 @@
 [Unit]
-Description=Disable WLAN after boot delay
+Description=Disable WLAN if WWAN has an IP
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/logger -t disable-wlan "Disabling Wi-Fi"
+# Run only if wwan0 has an IPv4 or IPv6 address at that moment
+ExecCondition=/bin/sh -c 'ip -4 -o addr show dev wwan0 | grep -q " inet " || ip -6 -o addr show dev wwan0 | grep -q " inet6 "'
+ExecStart=/usr/bin/logger -t disable-wlan "wwan0 has IP -> disabling Wi-Fi"
 ExecStart=/sbin/ip link set wlan0 down

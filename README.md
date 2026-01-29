@@ -77,7 +77,7 @@ sudo hotspot-on-webportal
 ## Optional
 
 for the 4G version install the module via:
-(it's default configured for the https://alwaysonnected.eu provider)
+(it's default configured for the https://alwaysconnected.eu/ provider)
 
 ```bash
 sudo install-4gmodule

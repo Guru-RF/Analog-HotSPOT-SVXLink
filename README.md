@@ -45,6 +45,8 @@
 
 13. Start configuration:
 
+Use your own email adress ! And use real coordinates, some reflectors do not like hotspots info to be hidden ! Look at the local AUP!
+
 ```bash
 sudo hotspot-config
 ```
@@ -59,6 +61,10 @@ sudo hotspot-config
     Once signed, your hotspot is fully operational.
 
 16. Continue setup:
+
+We encourage everyone to leave Temperature tuning on !
+
+Some people find the callsigns announcements in QSO's ennoying, you can turn this on or off here!
 
 ```bash
 sudo hotspot-options

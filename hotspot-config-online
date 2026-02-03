@@ -163,7 +163,7 @@ if [ "${BAND}" = "2m" ]; then
   fi
 fi
 
-gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67.0:8,71.9:4,74.4:6,77.0:23,79.7:,82.5:1745,85.4:8400):"
+gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,85.4:9000,88.5:8401):"
 if [[ "${OLDCTCSSMAPPING}" == "--CTCSSMAPPING--" ]]; then
   OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
 fi
@@ -174,7 +174,7 @@ CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
 gum style --foreground 212 "${CTCSSMAPPING}"
 
 # Always ask for CTCSS TX tone (from Tx1 CTCSS_FQ)
-gum style --foreground "#04B575" "Enter CTCSS TX tone (default 67) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4):"
+gum style --foreground "#04B575" "Enter CTCSS TX tone (default 67) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5):"
 if [[ "${OLDCTCSS}" == "" || "${OLDCTCSS}" == "--TXCTCSS--" ]]; then
   OLDCTCSS="88.5"
 fi
@@ -220,27 +220,18 @@ TGS=$(gum input --value "${OLDTGS}")
 gum style --foreground 212 "${TGS}"
 
 gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
-AFVOL=$(gum input --value "${OLDAFVOL}")
-if [[ "${AFVOL}" == "" ]]; then
-  AFVOL=69
-fi
+AFVOL=77
 gum style --foreground 212 "${AFVOL}"
 
 gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
-RFVOL=$(gum input --value "${OLDRFVOL}")
-if [[ "${RFVOL}" == "" ]]; then
-  RFVOL=19
-fi
+RFVOL=0
 gum style --foreground 212 "${RFVOL}"
 
 if [[ "${OLDCPVOL}" == "" ]]; then
   OLDCPVOL="1"
 fi
 gum style --foreground "#04B575" "Enter RF compression [1-8] (default 1):"
-CPVOL=$(gum input --value "${OLDCPVOL}")
-if [[ "${CPVOL}" == "" ]]; then
-  CPVOL=1
-fi
+CPVOL=1
 gum style --foreground 212 "${CPVOL}"
 
 EPOCH=$(date +%s)

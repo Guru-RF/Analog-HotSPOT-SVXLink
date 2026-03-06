@@ -15,6 +15,9 @@ say "Installing Prerequisites"
 run "pip3 install luma.oled"
 run "apt install -y fonts-terminus fonts-terminus-otb fonts-dejavu fonts-noto-mono fonts-spleen"
 
+say "Installing SVXLink OLED"
+run "cp svxoled.py /usr/sbin/svxoled.py"
+
 say "Installing SVXLink OLED Service"
 run "cp svxoled.service /etc/systemd/system/svxoled.service"
 run "systemctl enable svxoled.service"

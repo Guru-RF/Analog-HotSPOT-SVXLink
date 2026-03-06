@@ -16,6 +16,8 @@ run "pip3 install luma.oled"
 run "apt install -y fonts-terminus fonts-terminus-otb fonts-dejavu fonts-noto-mono fonts-spleen"
 
 say "Installing SVXLink OLED"
+run "cp check_ssd1306 /usr/sbin/check_ssd1306"
+run "chmod +x /usr/sbin/check_ssd1306"
 run "cp svxoled.py /usr/sbin/svxoled.py"
 
 say "Installing SVXLink OLED Service"

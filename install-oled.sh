@@ -16,5 +16,5 @@ run "pip3 install luma.oled"
 run "apt install -y fonts-terminus fonts-terminus-otb fonts-dejavu fonts-noto-mono fonts-spleen"
 
 say "Installing SVXLink OLED Service"
-run "cp svxlink-oled.service /etc/systemd/system/svxlink-oled.service"
-run "systemctl enable svxlink-oled.service"
+run "cp svxoled.service /etc/systemd/system/svxoled.service"
+run "systemctl enable svxoled.service"

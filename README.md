@@ -55,7 +55,7 @@ sudo hotspot-config
 
 14. For Belgian users, set the domain:
 
-    be.svx.link is the domain, the portal of this domain is https://portal.svx.link
+    *be.svx.link* is the domain, the portal of this domain is https://portal.be.svx.link
 
 15. After initial configuration, your **SVXReflector sysop must sign your certificate**.  
     Once signed, your hotspot is fully operational.

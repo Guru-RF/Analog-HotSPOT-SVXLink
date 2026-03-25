@@ -57,7 +57,7 @@ say "Backup old config"
 run "cp /etc/svxlink/svxlink.conf /tmp/svxlink.conf.${EPOCH}"
 run "rm -f /tmp/svxlink.conf"
 say "Downloading latest config template"
-run "wget -O /tmp/svxlink.conf https://raw.githubusercontent.com/Guru-RF/SVXSpotMain/master/svxlink.conf > /dev/null 2>&1"
+run "wget -O /tmp/svxlink.conf https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.conf > /dev/null 2>&1"
 say "Applying configuration"
 cp /tmp/svxlink.conf /etc/svxlink/svxlink.conf
 perl -i -pe "s/--HOST--/${OLDSVXREFL}/g" /etc/svxlink/svxlink.conf

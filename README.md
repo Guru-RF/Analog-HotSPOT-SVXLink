@@ -324,6 +324,15 @@ Edit talkgroup buttons:
 
 ---
 
+# Remove certificates (and request a new one)
+
+```bash
+    sudo rm -f /var/lib/svxlink/pki/*
+    sudo systemctl restart svxlink
+```
+
+---
+
 # Raspberry Pi Connect
 
 Connect remotely to your hotspot.

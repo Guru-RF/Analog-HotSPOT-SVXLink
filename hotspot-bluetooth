@@ -34,6 +34,7 @@ import logging
 import socket
 import subprocess
 import sys
+import threading
 
 import dbus
 import dbus.exceptions
@@ -61,7 +62,6 @@ DTMF_STATUS_UUID = "6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_COMMAND_UUID = "6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d"
 
 DTMF_HELPER = "/usr/sbin/hotspot_dtmf"
-DEVICE_NAME_PREFIX = "HotSpot"
 ALLOWED_DTMF_CHARS = set("0123456789ABCDabcd*#")
 MAX_PAYLOAD_BYTES = 64
 
@@ -255,25 +255,7 @@ class DtmfWriteCharacteristic(Characteristic):
             raise FailedException("invalid DTMF characters")
 
         log.info("DTMF -> %s", payload)
-        try:
-            result = subprocess.run(
-                [DTMF_HELPER, payload],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            if result.returncode == 0:
-                status = f"ok {payload}"
-            else:
-                status = f"err rc={result.returncode} {result.stderr.strip()}"
-        except subprocess.TimeoutExpired:
-            status = "err timeout"
-            log.error("hotspot_dtmf timed out")
-        except Exception as e:
-            status = f"err {e!r}"
-            log.exception("hotspot_dtmf failed")
-
-        self.status_char.notify_text(status)
+        run_async(self.status_char, payload, [DTMF_HELPER, payload], timeout=5)
 
 
 class CommandCharacteristic(Characteristic):
@@ -319,20 +301,7 @@ class CommandCharacteristic(Characteristic):
             )
             return
 
-        try:
-            r = subprocess.run(argv, capture_output=True, text=True, timeout=20)
-            if r.returncode == 0:
-                status = f"ok {cmd}"
-            else:
-                status = f"err {cmd} rc={r.returncode} {r.stderr.strip()}"
-        except subprocess.TimeoutExpired:
-            status = f"err {cmd} timeout"
-            log.error("command %s timed out", cmd)
-        except Exception as e:
-            status = f"err {cmd} {e!r}"
-            log.exception("command %s failed", cmd)
-
-        self.status_char.notify_text(status)
+        run_async(self.status_char, cmd, argv, timeout=20)
 
 
 class HotspotDtmfService(Service):
@@ -414,10 +383,29 @@ def power_on_adapter(bus, adapter_path):
 
 def local_name():
     try:
-        host = socket.gethostname()
+        return socket.gethostname()[:20]
     except Exception:
-        host = "pi"
-    return f"{DEVICE_NAME_PREFIX}-{host}"[:20]
+        return "hotspot"
+
+
+def run_async(status_char, label, argv, timeout):
+    """Run argv in a worker thread; notify status_char via the GLib main loop."""
+    def worker():
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+            if r.returncode == 0:
+                status = f"ok {label}"
+            else:
+                status = f"err {label} rc={r.returncode} {r.stderr.strip()}"
+        except subprocess.TimeoutExpired:
+            status = f"err {label} timeout"
+            log.error("%s timed out", label)
+        except Exception as e:
+            status = f"err {label} {e!r}"
+            log.exception("%s failed", label)
+        GLib.idle_add(status_char.notify_text, status)
+
+    threading.Thread(target=worker, daemon=True).start()
 
 
 def main():

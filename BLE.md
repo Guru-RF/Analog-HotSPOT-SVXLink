@@ -19,7 +19,7 @@ The service exposes two writable characteristics:
   range with the service UUID can write DTMF. Add `encrypt-write` /
   `encrypt-authenticated-write` flags on the write characteristic in
   `hotspot-bluetooth` if you want to force bonding.
-- Advertised locally as `HotSpot-<hostname>` (truncated to 20 bytes).
+- Advertised locally as the device hostname (truncated to 20 bytes).
 
 ## UUIDs
 
@@ -109,7 +109,7 @@ pushed unless the client has a pending `CCCD` subscription.
 
 ## Example session
 
-1. Client scans filtering for `6b1d6a10-...`, finds `HotSpot-myhost`.
+1. Client scans filtering for `6b1d6a10-...`, finds the hostname advertisement.
 2. Client connects, discovers services, finds the DTMF service.
 3. Client subscribes (enables notifications) on the status characteristic.
 4. Client writes bytes `0x39 0x31` (`"91"`) to the write characteristic.

@@ -33,5 +33,5 @@ run "systemctl daemon-reload"
 run "systemctl enable hotspot-bluetooth"
 run "systemctl restart hotspot-bluetooth"
 
-say "Done. Advertising as HotSpot-$(hostname)"
+say "Done. Advertising as $(hostname)"
 [[ "$REBOOT_NEEDED" = "1" ]] && say "Reboot required: dtoverlay=disable-bt was removed from config.txt"

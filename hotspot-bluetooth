@@ -1,0 +1,379 @@
+#!/usr/bin/env python3
+"""
+HotSpot Bluetooth DTMF Service
+
+BLE GATT server that accepts DTMF commands over a writable characteristic
+and forwards them to SVXLink via /usr/sbin/hotspot_dtmf (which pipes the
+value into `nc -N 127.0.0.1 10000`).
+
+Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
+
+  Advertised service UUID : 6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d
+  Write characteristic    : 6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d
+      - properties: write, write-without-response
+      - payload:    ASCII DTMF string, e.g. "91" or "D#"
+      - allowed:    0-9, A-D, *, #
+      - max length: 64 bytes
+  Status characteristic   : 6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d
+      - properties: notify
+      - payload:    UTF-8 status string ("ok rc=0 ..." / "err ...")
+
+The server advertises as "HotSpot-<hostname>" and does not require pairing.
+Add link-layer security in BlueZ (`org.bluez.GattCharacteristic1` "encrypt-*"
+flags) if you want to force bonding.
+"""
+
+import logging
+import socket
+import subprocess
+import sys
+
+import dbus
+import dbus.exceptions
+import dbus.mainloop.glib
+import dbus.service
+from gi.repository import GLib
+
+
+BLUEZ_SERVICE_NAME = "org.bluez"
+DBUS_OM_IFACE = "org.freedesktop.DBus.ObjectManager"
+DBUS_PROP_IFACE = "org.freedesktop.DBus.Properties"
+
+GATT_MANAGER_IFACE = "org.bluez.GattManager1"
+GATT_SERVICE_IFACE = "org.bluez.GattService1"
+GATT_CHRC_IFACE = "org.bluez.GattCharacteristic1"
+
+LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
+LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
+
+ADAPTER_IFACE = "org.bluez.Adapter1"
+
+DTMF_SVC_UUID = "6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d"
+DTMF_WRITE_UUID = "6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d"
+DTMF_STATUS_UUID = "6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d"
+
+DTMF_HELPER = "/usr/sbin/hotspot_dtmf"
+DEVICE_NAME_PREFIX = "HotSpot"
+ALLOWED_DTMF_CHARS = set("0123456789ABCDabcd*#")
+MAX_PAYLOAD_BYTES = 64
+
+log = logging.getLogger("hotspot-bluetooth")
+
+
+class InvalidArgsException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.freedesktop.DBus.Error.InvalidArgs"
+
+
+class NotSupportedException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.NotSupported"
+
+
+class FailedException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.Failed"
+
+
+class Application(dbus.service.Object):
+    PATH = "/org/guru_rf/hotspot"
+
+    def __init__(self, bus):
+        self.path = self.PATH
+        self.services = []
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_service(self, service):
+        self.services.append(service)
+
+    @dbus.service.method(DBUS_OM_IFACE, out_signature="a{oa{sa{sv}}}")
+    def GetManagedObjects(self):
+        response = {}
+        for svc in self.services:
+            response[svc.get_path()] = svc.get_properties()
+            for chrc in svc.characteristics:
+                response[chrc.get_path()] = chrc.get_properties()
+        return response
+
+
+class Service(dbus.service.Object):
+    PATH_BASE = "/org/guru_rf/hotspot/service"
+
+    def __init__(self, bus, index, uuid, primary):
+        self.path = f"{self.PATH_BASE}{index}"
+        self.bus = bus
+        self.uuid = uuid
+        self.primary = primary
+        self.characteristics = []
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+            GATT_SERVICE_IFACE: {
+                "UUID": self.uuid,
+                "Primary": self.primary,
+                "Characteristics": dbus.Array(
+                    [c.get_path() for c in self.characteristics], signature="o"
+                ),
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    def add_characteristic(self, characteristic):
+        self.characteristics.append(characteristic)
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface):
+        if interface != GATT_SERVICE_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_SERVICE_IFACE]
+
+
+class Characteristic(dbus.service.Object):
+    def __init__(self, bus, index, uuid, flags, service):
+        self.path = f"{service.path}/char{index}"
+        self.bus = bus
+        self.uuid = uuid
+        self.service = service
+        self.flags = flags
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+            GATT_CHRC_IFACE: {
+                "Service": self.service.get_path(),
+                "UUID": self.uuid,
+                "Flags": self.flags,
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface):
+        if interface != GATT_CHRC_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[GATT_CHRC_IFACE]
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature="a{sv}", out_signature="ay")
+    def ReadValue(self, options):
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature="aya{sv}")
+    def WriteValue(self, value, options):
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StartNotify(self):
+        raise NotSupportedException()
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StopNotify(self):
+        raise NotSupportedException()
+
+    @dbus.service.signal(DBUS_PROP_IFACE, signature="sa{sv}as")
+    def PropertiesChanged(self, interface, changed, invalidated):
+        pass
+
+
+class StatusCharacteristic(Characteristic):
+    def __init__(self, bus, index, service):
+        super().__init__(bus, index, DTMF_STATUS_UUID, ["notify"], service)
+        self.notifying = False
+
+    def notify_text(self, text):
+        if not self.notifying:
+            return
+        data = dbus.Array(
+            [dbus.Byte(b) for b in text.encode("utf-8")[:512]], signature="y"
+        )
+        self.PropertiesChanged(GATT_CHRC_IFACE, {"Value": data}, [])
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StartNotify(self):
+        self.notifying = True
+        log.info("Status notifications started")
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StopNotify(self):
+        self.notifying = False
+        log.info("Status notifications stopped")
+
+
+class DtmfWriteCharacteristic(Characteristic):
+    def __init__(self, bus, index, service, status_char):
+        super().__init__(
+            bus,
+            index,
+            DTMF_WRITE_UUID,
+            ["write", "write-without-response"],
+            service,
+        )
+        self.status_char = status_char
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature="aya{sv}")
+    def WriteValue(self, value, options):
+        raw = bytes(value)
+        if len(raw) > MAX_PAYLOAD_BYTES:
+            log.warning("Oversize DTMF write (%d bytes), rejecting", len(raw))
+            raise FailedException("payload too long")
+
+        payload = raw.decode("utf-8", errors="replace").strip()
+        if not payload:
+            log.warning("Empty DTMF write, ignoring")
+            return
+
+        if not set(payload).issubset(ALLOWED_DTMF_CHARS):
+            log.warning("Rejected DTMF payload with disallowed chars: %r", payload)
+            raise FailedException("invalid DTMF characters")
+
+        log.info("DTMF -> %s", payload)
+        try:
+            result = subprocess.run(
+                [DTMF_HELPER, payload],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                status = f"ok {payload}"
+            else:
+                status = f"err rc={result.returncode} {result.stderr.strip()}"
+        except subprocess.TimeoutExpired:
+            status = "err timeout"
+            log.error("hotspot_dtmf timed out")
+        except Exception as e:
+            status = f"err {e!r}"
+            log.exception("hotspot_dtmf failed")
+
+        self.status_char.notify_text(status)
+
+
+class HotspotDtmfService(Service):
+    def __init__(self, bus, index):
+        super().__init__(bus, index, DTMF_SVC_UUID, True)
+        status = StatusCharacteristic(bus, 1, self)
+        write = DtmfWriteCharacteristic(bus, 0, self, status)
+        self.add_characteristic(write)
+        self.add_characteristic(status)
+
+
+class Advertisement(dbus.service.Object):
+    PATH_BASE = "/org/guru_rf/hotspot/advertisement"
+
+    def __init__(self, bus, index, local_name):
+        self.path = f"{self.PATH_BASE}{index}"
+        self.bus = bus
+        self.ad_type = "peripheral"
+        self.local_name = local_name
+        dbus.service.Object.__init__(self, bus, self.path)
+
+    def get_properties(self):
+        return {
+            LE_ADVERTISEMENT_IFACE: {
+                "Type": self.ad_type,
+                "ServiceUUIDs": dbus.Array([DTMF_SVC_UUID], signature="s"),
+                "LocalName": dbus.String(self.local_name),
+            }
+        }
+
+    def get_path(self):
+        return dbus.ObjectPath(self.path)
+
+    @dbus.service.method(DBUS_PROP_IFACE, in_signature="s", out_signature="a{sv}")
+    def GetAll(self, interface):
+        if interface != LE_ADVERTISEMENT_IFACE:
+            raise InvalidArgsException()
+        return self.get_properties()[LE_ADVERTISEMENT_IFACE]
+
+    @dbus.service.method(LE_ADVERTISEMENT_IFACE, in_signature="", out_signature="")
+    def Release(self):
+        log.info("Advertisement released: %s", self.path)
+
+
+def find_adapter(bus):
+    remote_om = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, "/"), DBUS_OM_IFACE
+    )
+    for path, ifaces in remote_om.GetManagedObjects().items():
+        if GATT_MANAGER_IFACE in ifaces and LE_ADVERTISING_MANAGER_IFACE in ifaces:
+            return path
+    return None
+
+
+def power_on_adapter(bus, adapter_path):
+    props = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter_path), DBUS_PROP_IFACE
+    )
+    props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+
+
+def local_name():
+    try:
+        host = socket.gethostname()
+    except Exception:
+        host = "pi"
+    return f"{DEVICE_NAME_PREFIX}-{host}"[:20]
+
+
+def main():
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
+
+    dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+
+    adapter = find_adapter(bus)
+    if not adapter:
+        log.error("No Bluetooth adapter with GATT + LE advertising support found")
+        sys.exit(1)
+    log.info("Using adapter: %s", adapter)
+    power_on_adapter(bus, adapter)
+
+    service_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter), GATT_MANAGER_IFACE
+    )
+    ad_manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, adapter), LE_ADVERTISING_MANAGER_IFACE
+    )
+
+    app = Application(bus)
+    app.add_service(HotspotDtmfService(bus, 0))
+    advertisement = Advertisement(bus, 0, local_name())
+
+    mainloop = GLib.MainLoop()
+
+    service_manager.RegisterApplication(
+        app.get_path(),
+        {},
+        reply_handler=lambda: log.info("GATT application registered"),
+        error_handler=lambda e: (log.error("RegisterApplication: %s", e), mainloop.quit()),
+    )
+    ad_manager.RegisterAdvertisement(
+        advertisement.get_path(),
+        {},
+        reply_handler=lambda: log.info("Advertising as %s", advertisement.local_name),
+        error_handler=lambda e: (log.error("RegisterAdvertisement: %s", e), mainloop.quit()),
+    )
+
+    try:
+        mainloop.run()
+    except KeyboardInterrupt:
+        log.info("Shutting down")
+    finally:
+        try:
+            ad_manager.UnregisterAdvertisement(advertisement.get_path())
+        except Exception:
+            pass
+        try:
+            service_manager.UnregisterApplication(app.get_path())
+        except Exception:
+            pass
+
+
+if __name__ == "__main__":
+    main()

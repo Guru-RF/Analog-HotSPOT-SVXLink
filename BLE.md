@@ -11,6 +11,25 @@ The service exposes two writable characteristics:
 - **Command** — a small fixed set of device-level actions (reboot, poweroff,
   start/stop svxlink, enable/disable the 4G uplink).
 
+## Client-side tips for stability
+
+- **Prefer write-without-response** for both the DTMF and command
+  characteristics. Both advertise `write` and `write-without-response`; the
+  phone can pick. With-response means the client waits for an ATT ACK and
+  will drop the link if it doesn't come in time. Without-response is
+  fire-and-forget — you still get your logical confirmation via the status
+  notify.
+- **Keep the status characteristic subscribed** for the lifetime of the
+  connection. The server uses it to report results; re-subscribing on every
+  write is wasted round-trips.
+- **Don't open/close the GATT connection per command.** Connect once, keep
+  it, write whenever. BLE connection setup is expensive (1–2 s) and some
+  centrals rate-limit reconnections.
+- On iOS, if the app is backgrounded without the `bluetooth-central`
+  background mode, iOS will tear down the BLE connection with reason 0x13
+  ("Remote User Terminated") — this looks like a server-side drop but it
+  isn't.
+
 ## Transport
 
 - **BLE GATT** (Bluetooth Low Energy). Not classic Bluetooth / RFCOMM / SPP.

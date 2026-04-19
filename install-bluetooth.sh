@@ -39,10 +39,13 @@ say "Enabling bluetoothd --experimental (needed for several BLE stability fixes)
 BTD=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
 [[ -z "$BTD" ]] && BTD=/usr/libexec/bluetooth/bluetoothd
 run "mkdir -p /etc/systemd/system/bluetooth.service.d"
+# --noplugin=midi silences "midi_io_initial_read_cb: Failed to read initial
+# request" and removes a known cause of GATT disconnects on Pi. sap/input
+# are classic-BT profiles we have no use for.
 cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<EOF
 [Service]
 ExecStart=
-ExecStart=$BTD --experimental
+ExecStart=$BTD --experimental --noplugin=midi,sap,input
 EOF
 run "systemctl daemon-reload"
 run "systemctl restart bluetooth"

@@ -9,14 +9,21 @@ value into `nc -N 127.0.0.1 10000`).
 Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
 
   Advertised service UUID : 6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d
-  Write characteristic    : 6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d
+  DTMF write characteristic : 6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d
       - properties: write, write-without-response
       - payload:    ASCII DTMF string, e.g. "91" or "D#"
       - allowed:    0-9, A-D, *, #
       - max length: 64 bytes
-  Status characteristic   : 6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d
+  Status characteristic     : 6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d
       - properties: notify
-      - payload:    UTF-8 status string ("ok rc=0 ..." / "err ...")
+      - payload:    UTF-8 status string ("ok ..." / "err ...")
+  Command characteristic    : 6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d
+      - properties: write, write-without-response
+      - payload:    one of a fixed set of ASCII commands:
+                      reboot, poweroff,
+                      svxlink-start, svxlink-stop, svxlink-restart,
+                      4g-enable, 4g-disable
+      - result:     notified on the status characteristic
 
 The server advertises as "HotSpot-<hostname>" and does not require pairing.
 Add link-layer security in BlueZ (`org.bluez.GattCharacteristic1` "encrypt-*"
@@ -51,11 +58,28 @@ ADAPTER_IFACE = "org.bluez.Adapter1"
 DTMF_SVC_UUID = "6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_WRITE_UUID = "6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_STATUS_UUID = "6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d"
+DTMF_COMMAND_UUID = "6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d"
 
 DTMF_HELPER = "/usr/sbin/hotspot_dtmf"
 DEVICE_NAME_PREFIX = "HotSpot"
 ALLOWED_DTMF_CHARS = set("0123456789ABCDabcd*#")
 MAX_PAYLOAD_BYTES = 64
+
+# Whitelisted commands. Each entry: (fire_and_forget, argv).
+# "fire_and_forget" commands notify "ok <name>" immediately and exec in the
+# background — used for reboot/poweroff so the BLE notify flushes before the
+# kernel tears us down.
+COMMANDS = {
+    "reboot":          (True,  ["sh", "-c", "sleep 1; systemctl reboot"]),
+    "poweroff":        (True,  ["sh", "-c", "sleep 1; systemctl poweroff"]),
+    "svxlink-start":   (False, ["systemctl", "start", "svxlink"]),
+    "svxlink-stop":    (False, ["systemctl", "stop", "svxlink"]),
+    "svxlink-restart": (False, ["systemctl", "restart", "svxlink"]),
+    "4g-enable":       (False, ["systemctl", "start", "--no-block", "hotspot-4g"]),
+    "4g-disable":      (False, ["sh", "-c",
+                                "systemctl stop hotspot-4g; "
+                                "ip link set wlan0 up 2>/dev/null || true"]),
+}
 
 log = logging.getLogger("hotspot-bluetooth")
 
@@ -252,12 +276,73 @@ class DtmfWriteCharacteristic(Characteristic):
         self.status_char.notify_text(status)
 
 
+class CommandCharacteristic(Characteristic):
+    def __init__(self, bus, index, service, status_char):
+        super().__init__(
+            bus,
+            index,
+            DTMF_COMMAND_UUID,
+            ["write", "write-without-response"],
+            service,
+        )
+        self.status_char = status_char
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature="aya{sv}")
+    def WriteValue(self, value, options):
+        raw = bytes(value)
+        if len(raw) > MAX_PAYLOAD_BYTES:
+            log.warning("Oversize command write (%d bytes), rejecting", len(raw))
+            raise FailedException("payload too long")
+
+        cmd = raw.decode("utf-8", errors="replace").strip().lower()
+        if not cmd:
+            log.warning("Empty command write, ignoring")
+            return
+
+        entry = COMMANDS.get(cmd)
+        if not entry:
+            log.warning("Rejected unknown command: %r", cmd)
+            self.status_char.notify_text(f"err unknown {cmd}")
+            raise FailedException("unknown command")
+
+        fire_and_forget, argv = entry
+        log.info("command -> %s", cmd)
+
+        if fire_and_forget:
+            self.status_char.notify_text(f"ok {cmd}")
+            subprocess.Popen(
+                argv,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                close_fds=True,
+            )
+            return
+
+        try:
+            r = subprocess.run(argv, capture_output=True, text=True, timeout=20)
+            if r.returncode == 0:
+                status = f"ok {cmd}"
+            else:
+                status = f"err {cmd} rc={r.returncode} {r.stderr.strip()}"
+        except subprocess.TimeoutExpired:
+            status = f"err {cmd} timeout"
+            log.error("command %s timed out", cmd)
+        except Exception as e:
+            status = f"err {cmd} {e!r}"
+            log.exception("command %s failed", cmd)
+
+        self.status_char.notify_text(status)
+
+
 class HotspotDtmfService(Service):
     def __init__(self, bus, index):
         super().__init__(bus, index, DTMF_SVC_UUID, True)
-        status = StatusCharacteristic(bus, 1, self)
+        status = StatusCharacteristic(bus, 2, self)
         write = DtmfWriteCharacteristic(bus, 0, self, status)
+        command = CommandCharacteristic(bus, 1, self, status)
         self.add_characteristic(write)
+        self.add_characteristic(command)
         self.add_characteristic(status)
 
 

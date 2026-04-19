@@ -29,7 +29,9 @@ if [[ -f /etc/bluetooth/main.conf ]]; then
   # LE-only avoids BR/EDR contention on the BCM43438 combo radio.
   run "sed -i -E 's/^[#[:space:]]*(ControllerMode[[:space:]]*=).*/\1 le/' /etc/bluetooth/main.conf"
   run "sed -i -E 's/^[#[:space:]]*(Experimental[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
-  run "sed -i -E 's/^[#[:space:]]*(FastConnectable[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+  # FastConnectable is a BR/EDR page-scan tweak the BCM43438 firmware
+  # rejects ("Failed to set mode: Not Supported"). Force it off.
+  run "sed -i -E 's/^[#[:space:]]*(FastConnectable[[:space:]]*=).*/\1 false/' /etc/bluetooth/main.conf"
   # LE advertisement interval (ms). Lower = quicker reconnect after a drop.
   run "sed -i -E 's/^[#[:space:]]*(MinAdvertisementInterval[[:space:]]*=).*/\1 100/' /etc/bluetooth/main.conf"
   run "sed -i -E 's/^[#[:space:]]*(MaxAdvertisementInterval[[:space:]]*=).*/\1 150/' /etc/bluetooth/main.conf"
@@ -39,13 +41,15 @@ say "Enabling bluetoothd --experimental (needed for several BLE stability fixes)
 BTD=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
 [[ -z "$BTD" ]] && BTD=/usr/libexec/bluetooth/bluetoothd
 run "mkdir -p /etc/systemd/system/bluetooth.service.d"
-# --noplugin=midi silences "midi_io_initial_read_cb: Failed to read initial
-# request" and removes a known cause of GATT disconnects on Pi. sap/input
-# are classic-BT profiles we have no use for.
+# We only speak GATT over LE. Disable every plugin that targets classic
+# audio / telephony / HID — they spam the log with SDP-registration errors
+# (AVRCP "Operation not permitted" etc.) when BR/EDR is off, and the MIDI
+# plugin in particular is a documented cause of GATT disconnects on Pi.
+NOPLUGIN=midi,sap,input,hog,a2dp,avrcp,audio,hsp,hfp,pbap,map,obex,network,health,wiimote
 cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<EOF
 [Service]
 ExecStart=
-ExecStart=$BTD --experimental --noplugin=midi,sap,input
+ExecStart=$BTD --experimental --noplugin=$NOPLUGIN
 EOF
 run "systemctl daemon-reload"
 run "systemctl restart bluetooth"

@@ -2,11 +2,12 @@
 Description=HotSpot Bluetooth DTMF Service
 After=bluetooth.service svxlink.service
 Requires=bluetooth.service
+BindsTo=bluetooth.service
 
 [Service]
 Type=simple
 ExecStart=/usr/sbin/hotspot-bluetooth
-Restart=on-failure
+Restart=always
 RestartSec=3
 
 [Install]

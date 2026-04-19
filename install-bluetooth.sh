@@ -23,6 +23,30 @@ for cfg in /boot/firmware/config.txt /boot/config.txt; do
   fi
 done
 
+say "Tuning /etc/bluetooth/main.conf for stable BLE on the combo chip"
+if [[ -f /etc/bluetooth/main.conf ]]; then
+  run "cp -n /etc/bluetooth/main.conf /etc/bluetooth/main.conf.orig || true"
+  # LE-only avoids BR/EDR contention on the BCM43438 combo radio.
+  run "sed -i -E 's/^[#[:space:]]*(ControllerMode[[:space:]]*=).*/\1 le/' /etc/bluetooth/main.conf"
+  run "sed -i -E 's/^[#[:space:]]*(Experimental[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+  run "sed -i -E 's/^[#[:space:]]*(FastConnectable[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+  # LE advertisement interval (ms). Lower = quicker reconnect after a drop.
+  run "sed -i -E 's/^[#[:space:]]*(MinAdvertisementInterval[[:space:]]*=).*/\1 100/' /etc/bluetooth/main.conf"
+  run "sed -i -E 's/^[#[:space:]]*(MaxAdvertisementInterval[[:space:]]*=).*/\1 150/' /etc/bluetooth/main.conf"
+fi
+
+say "Enabling bluetoothd --experimental (needed for several BLE stability fixes)"
+BTD=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
+[[ -z "$BTD" ]] && BTD=/usr/libexec/bluetooth/bluetoothd
+run "mkdir -p /etc/systemd/system/bluetooth.service.d"
+cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=$BTD --experimental
+EOF
+run "systemctl daemon-reload"
+run "systemctl restart bluetooth"
+
 say "Install hotspot-bluetooth"
 run "cp hotspot-bluetooth /usr/sbin/hotspot-bluetooth"
 run "chmod +x /usr/sbin/hotspot-bluetooth"

@@ -4,12 +4,18 @@ Reference for building iOS / macOS / Android / Linux clients that talk to the
 hotspot's Bluetooth DTMF service (`/usr/sbin/hotspot-bluetooth`, systemd unit
 `hotspot-bluetooth.service`).
 
-The service exposes two writable characteristics:
+The service exposes two writable characteristics and two notify
+characteristics:
 
 - **DTMF** — turns a BLE write into `echo <payload> | nc -N 127.0.0.1 10000`
   on the hotspot, which is SVXLink's DTMF command socket.
 - **Command** — a small fixed set of device-level actions (reboot, poweroff,
   start/stop svxlink, enable/disable the 4G uplink).
+- **Status** — notify channel confirming DTMF/command writes.
+- **Feed** — notify stream of the hotspot's live state (callsign, frequency,
+  talkgroup, current / last talker, TX/RX flags). Built by tailing
+  `/var/log/svxlink` inside `hotspot-bluetooth` itself, so it works on
+  hotspots that don't have an OLED attached.
 
 ## Client-side tips for stability
 
@@ -48,6 +54,7 @@ The service exposes two writable characteristics:
 | DTMF write | `6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d` | `write`, `write-without-response` |
 | Status notify | `6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d` | `notify` |
 | Command write | `6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d` | `write`, `write-without-response` |
+| Feed notify | `6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d` | `notify` |
 
 On iOS these become `CBUUID` values; on Android `UUID.fromString(...)`.
 
@@ -125,6 +132,49 @@ the client has to re-scan when the device comes back.
 
 The notify stream is a server → client confirmation channel only. Nothing is
 pushed unless the client has a pending `CCCD` subscription.
+
+## Feed notify characteristic
+
+Live snapshot of what the hotspot is doing — the same information the OLED
+would show, streamed as JSON. Works even on units that have no OLED.
+
+- UUID: `6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d`
+- Properties: `notify`
+- Payload: one compact JSON object per notification, no trailing newline,
+  UTF-8. Fields:
+
+  | Key | Type | Meaning |
+  | --- | --- | --- |
+  | `ip` | string | device's outbound IP (best-effort) |
+  | `cs` | string | callsign from `/etc/svxlink/svxlink.conf` |
+  | `fq` | string | frequency parsed from `/usr/sbin/hotspot` |
+  | `tg` | string | current talkgroup number |
+  | `tk` | string | callsign of the active talker (empty if none) |
+  | `ltk` | string | callsign of the last talker that finished |
+  | `tx` | 0 / 1 | SVXLink transmitter on |
+  | `rx` | 0 / 1 | local squelch open (RF carrier present) |
+
+  Example:
+
+  ```json
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0}
+  ```
+
+- Cadence: one notification on every state change, plus a keepalive every
+  ~3 s even when nothing changed. Subscribing immediately replays the last
+  known snapshot so the UI is never blank after a reconnect.
+
+### MTU — important for the feed
+
+The feed payload is typically 90–140 bytes. BLE's default ATT MTU is 23
+bytes (20 bytes of payload), which would truncate it.
+
+- **iOS / macOS** — CoreBluetooth auto-negotiates MTU ≈ 185. No action needed.
+- **Web Bluetooth** — negotiates MTU 247 automatically. No action needed.
+- **Android** — defaults to 23. **Immediately after `onServicesDiscovered`,
+  call `gatt.requestMtu(247)`** and wait for `onMtuChanged` before
+  subscribing to the feed characteristic. Without this, every feed
+  notification arrives truncated.
 
 ## Example session
 

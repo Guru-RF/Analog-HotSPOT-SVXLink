@@ -24,17 +24,27 @@ Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
                       svxlink-start, svxlink-stop, svxlink-restart,
                       4g-enable, 4g-disable
       - result:     notified on the status characteristic
+  Feed characteristic       : 6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d
+      - properties: notify
+      - payload:    compact JSON snapshot of hotspot state built by tailing
+                    /var/log/svxlink: ip, callsign (cs), frequency (fq),
+                    talkgroup (tg), current talker (tk), last talker (ltk),
+                    tx / rx flags. Clients should negotiate MTU >= 200.
 
-The server advertises as "HotSpot-<hostname>" and does not require pairing.
+The server advertises as the device hostname and does not require pairing.
 Add link-layer security in BlueZ (`org.bluez.GattCharacteristic1` "encrypt-*"
 flags) if you want to force bonding.
 """
 
+import json
 import logging
+import os
+import re
 import socket
 import subprocess
 import sys
 import threading
+import time
 
 import dbus
 import dbus.exceptions
@@ -60,10 +70,18 @@ DTMF_SVC_UUID = "6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_WRITE_UUID = "6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_STATUS_UUID = "6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_COMMAND_UUID = "6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d"
+DTMF_FEED_UUID = "6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d"
 
 DTMF_HELPER = "/usr/sbin/hotspot_dtmf"
 ALLOWED_DTMF_CHARS = set("0123456789ABCDabcd*#")
 MAX_PAYLOAD_BYTES = 64
+
+# State feed sources (mirrors svxoled.py so hotspots without an OLED still work).
+SVXLINK_LOGFILE = "/var/log/svxlink"
+SVXLINK_CONF = "/etc/svxlink/svxlink.conf"
+HOTSPOT_SCRIPT = "/usr/sbin/hotspot"
+FEED_IP_REFRESH = 30.0       # seconds
+FEED_HEARTBEAT = 3.0         # seconds between "unchanged" pushes
 
 # Whitelisted commands. Each entry: (fire_and_forget, argv).
 # "fire_and_forget" commands notify "ok <name>" immediately and exec in the
@@ -304,15 +322,228 @@ class CommandCharacteristic(Characteristic):
         run_async(self.status_char, cmd, argv, timeout=20)
 
 
+class FeedCharacteristic(Characteristic):
+    """Notify-only state feed; mirrors svxoled's view of the hotspot."""
+
+    def __init__(self, bus, index, service):
+        super().__init__(bus, index, DTMF_FEED_UUID, ["notify"], service)
+        self.notifying = False
+        self.last_payload = None
+
+    def push(self, data):
+        # Runs on the GLib main thread (scheduled by StateFeed via idle_add).
+        self.last_payload = data
+        if self.notifying:
+            self._emit(data)
+        return False
+
+    def _emit(self, data):
+        arr = dbus.Array([dbus.Byte(b) for b in data[:512]], signature="y")
+        self.PropertiesChanged(GATT_CHRC_IFACE, {"Value": arr}, [])
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StartNotify(self):
+        self.notifying = True
+        log.info("Feed notifications started")
+        if self.last_payload:
+            self._emit(self.last_payload)
+
+    @dbus.service.method(GATT_CHRC_IFACE)
+    def StopNotify(self):
+        self.notifying = False
+        log.info("Feed notifications stopped")
+
+
+class StateFeed:
+    """Tails /var/log/svxlink, builds compact JSON, pushes to FeedCharacteristic.
+
+    Parsing rules kept in sync with svxoled.py so clients see the same view.
+    """
+
+    def __init__(self, feed_char):
+        self.feed_char = feed_char
+        self.state = {
+            "ip": "",
+            "cs": "",
+            "fq": "",
+            "tg": "",
+            "tk": "",
+            "ltk": "",
+            "tx": 0,
+            "rx": 0,
+        }
+        self._last_payload = None
+        self._last_sent = 0.0
+        self._last_ip_refresh = 0.0
+
+    def start(self):
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _read_callsign(self):
+        try:
+            with open(SVXLINK_CONF, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    m = re.match(r'^\s*CALLSIGN\s*=\s*"?([^"\s]+)"?\s*$', line)
+                    if m:
+                        return m.group(1).strip()
+        except Exception:
+            pass
+        return ""
+
+    def _read_frequency(self):
+        try:
+            with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if "--frequency" in line:
+                        m = re.search(r'--frequency\s+([0-9]+(?:\.[0-9]+)?)', line)
+                        if m:
+                            return m.group(1)
+        except Exception:
+            pass
+        return ""
+
+    def _read_ip(self):
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            s.settimeout(1.0)
+            s.connect(("8.8.8.8", 80))
+            ip = s.getsockname()[0]
+            s.close()
+            return ip
+        except Exception:
+            return ""
+
+    def _open_log(self, seek_end):
+        f = open(SVXLINK_LOGFILE, "r", encoding="utf-8", errors="replace")
+        f.seek(0, 2 if seek_end else 0)
+        return f, os.fstat(f.fileno()).st_ino
+
+    def _check_log_reopen(self, f, ino):
+        try:
+            st = os.stat(SVXLINK_LOGFILE)
+        except FileNotFoundError:
+            return f, ino
+        except Exception:
+            return f, ino
+        try:
+            cur = f.tell()
+        except Exception:
+            cur = 0
+        if st.st_ino != ino:
+            try:
+                f.close()
+            except Exception:
+                pass
+            try:
+                return self._open_log(seek_end=False)
+            except Exception:
+                return f, ino
+        if st.st_size < cur:
+            try:
+                f.seek(0, 0)
+            except Exception:
+                pass
+        return f, ino
+
+    def _parse_line(self, line):
+        l = line.lower()
+        if "rx1: the squelch is open" in l:
+            self.state["rx"] = 1
+        elif "rx1: the squelch is closed" in l:
+            self.state["rx"] = 0
+
+        if "selecting tg #" in l:
+            m = re.search(r"tg\s*#(\d+)", l)
+            if m:
+                self.state["tg"] = m.group(1)
+
+        if "talker start on tg #" in l:
+            m = re.search(r"tg\s*#(\d+)", l)
+            if m:
+                self.state["tg"] = m.group(1)
+            try:
+                self.state["tk"] = line.rsplit(":", 1)[1].strip()
+            except Exception:
+                pass
+        elif "talker stop on tg #" in l:
+            if self.state["tk"]:
+                self.state["ltk"] = self.state["tk"]
+            self.state["tk"] = ""
+        elif "turning the transmitter on" in l:
+            self.state["tx"] = 1
+        elif "turning the transmitter off" in l:
+            self.state["tx"] = 0
+            if self.state["tk"]:
+                self.state["ltk"] = self.state["tk"]
+            self.state["tk"] = ""
+
+    def _maybe_push(self, now, force=False):
+        payload = json.dumps(self.state, separators=(",", ":")).encode("utf-8")
+        unchanged = payload == self._last_payload
+        if not force and unchanged and (now - self._last_sent) < FEED_HEARTBEAT:
+            return
+        self._last_payload = payload
+        self._last_sent = now
+        GLib.idle_add(self.feed_char.push, payload)
+
+    def _run(self):
+        self.state["cs"] = self._read_callsign()
+        self.state["fq"] = self._read_frequency()
+        self.state["ip"] = self._read_ip()
+        self._last_ip_refresh = time.monotonic()
+
+        f = None
+        ino = None
+        try:
+            f, ino = self._open_log(seek_end=True)
+        except Exception as e:
+            log.warning("Cannot open %s yet: %s", SVXLINK_LOGFILE, e)
+
+        self._maybe_push(time.monotonic(), force=True)
+
+        while True:
+            now = time.monotonic()
+
+            if f is not None:
+                try:
+                    while True:
+                        line = f.readline()
+                        if not line:
+                            break
+                        self._parse_line(line)
+                except Exception:
+                    log.exception("log tail error")
+                f, ino = self._check_log_reopen(f, ino)
+            else:
+                try:
+                    f, ino = self._open_log(seek_end=True)
+                except Exception:
+                    pass
+
+            if now - self._last_ip_refresh > FEED_IP_REFRESH:
+                new_ip = self._read_ip()
+                if new_ip:
+                    self.state["ip"] = new_ip
+                self._last_ip_refresh = now
+
+            self._maybe_push(now)
+            time.sleep(0.1)
+
+
 class HotspotDtmfService(Service):
     def __init__(self, bus, index):
         super().__init__(bus, index, DTMF_SVC_UUID, True)
         status = StatusCharacteristic(bus, 2, self)
+        self.feed = FeedCharacteristic(bus, 3, self)
         write = DtmfWriteCharacteristic(bus, 0, self, status)
         command = CommandCharacteristic(bus, 1, self, status)
         self.add_characteristic(write)
         self.add_characteristic(command)
         self.add_characteristic(status)
+        self.add_characteristic(self.feed)
 
 
 class Advertisement(dbus.service.Object):
@@ -441,8 +672,11 @@ def main():
     )
 
     app = Application(bus)
-    app.add_service(HotspotDtmfService(bus, 0))
+    hotspot_service = HotspotDtmfService(bus, 0)
+    app.add_service(hotspot_service)
     advertisement = Advertisement(bus, 0, local_name())
+
+    StateFeed(hotspot_service.feed).start()
 
     mainloop = GLib.MainLoop()
 

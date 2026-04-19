@@ -1,44 +1,107 @@
 #!/bin/bash
-set -euo pipefail
-
+set -uo pipefail  # note: NOT -e, we want to handle failures
 CONF="/etc/hotspot-4g.conf"
+APN="globaldata.iot"; IP_TYPE="4"; AUTH=""; APN_USER=""; APN_PASS=""
+[[ -f "$CONF" ]] && source "$CONF"
 
-# defaults
-APN="globaldata.iot"
-IP_TYPE="4"
-AUTH=""
-APN_USER=""
-APN_PASS=""
+DEV=/dev/cdc-wdm0
+IFACE=wwan0
+MAX_ATTEMPTS=99
 
-if [[ -f "$CONF" ]]; then
-  # shellcheck disable=SC1090
-  source "$CONF" || true
-fi
+log() { echo "[$(date +%H:%M:%S)] $*"; }
 
-ip link set wwan0 down
-echo Y > /sys/class/net/wwan0/qmi/raw_ip
+cleanup_sessions() {
+  # Release any stale WDS clients from a previous run
+  qmicli -d "$DEV" --wds-reset 2>/dev/null || true
+  qmicli -d "$DEV" --wds-stop-network=disable-autoconnect 2>/dev/null || true
+  pkill -f "udhcpc.*$IFACE" 2>/dev/null || true
+  ip addr flush dev "$IFACE" 2>/dev/null || true
+  ip link set "$IFACE" down 2>/dev/null || true
+}
 
-for _ in $(seq 1 600); do /usr/bin/test -c /dev/cdc-wdm0 && break; /bin/sleep 1; done
-for _ in $(seq 1 600); do /usr/bin/qmicli -d /dev/cdc-wdm0 --nas-get-signal-strength && break; /bin/sleep 1; done
+wait_for_device() {
+  for _ in $(seq 1 60); do
+    [[ -c "$DEV" ]] && return 0
+    sleep 1
+  done
+  return 1
+}
 
-ip link set wwan0 up
+wait_for_registration() {
+  # Wait for "registered" on home or roaming, not just signal
+  for _ in $(seq 1 60); do
+    local out
+    out=$(qmicli -d "$DEV" --nas-get-serving-system 2>/dev/null || true)
+    if echo "$out" | grep -qE "Registration state: 'registered'"; then
+      # Also check PS attach
+      if echo "$out" | grep -qE "PS: 'attached'|Data service: 'non-3gpp-and-3gpp'|Data service capabilities:.*gprs"; then
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+  return 1
+}
 
-# Build WDS start string; only include creds/auth when non-empty
-WDS="apn='${APN}',ip-type=${IP_TYPE}"
+reset_modem() {
+  log "Resetting modem via QMI..."
+  qmicli -d "$DEV" --dms-set-operating-mode=low-power 2>/dev/null || true
+  sleep 3
+  qmicli -d "$DEV" --dms-set-operating-mode=online 2>/dev/null || true
+  sleep 5
+}
 
-if [[ -n "${AUTH}" ]]; then
-  WDS="${WDS},auth=${AUTH}"
-fi
-if [[ -n "${APN_USER}" ]]; then
-  WDS="${WDS},username='${APN_USER}'"
-fi
-if [[ -n "${APN_PASS}" ]]; then
-  WDS="${WDS},password='${APN_PASS}'"
-fi
+start_session() {
+  local wds="apn='${APN}',ip-type=${IP_TYPE}"
+  [[ -n "$AUTH" ]]     && wds+=",auth=${AUTH}"
+  [[ -n "$APN_USER" ]] && wds+=",username='${APN_USER}'"
+  [[ -n "$APN_PASS" ]] && wds+=",password='${APN_PASS}'"
 
-qmicli -p -d /dev/cdc-wdm0 \
-  --device-open-net='net-raw-ip|net-no-qos-header' \
-  --wds-start-network="${WDS}" \
-  --client-no-release-cid
+  qmicli -p -d "$DEV" \
+    --device-open-net='net-raw-ip|net-no-qos-header' \
+    --wds-start-network="$wds" \
+    --client-no-release-cid
+}
 
-udhcpc -q -f -i wwan0
+get_ip() {
+  # Retry DHCP a few times; first attach is often slow
+  for _ in 1 2 3; do
+    if udhcpc -q -t 6 -T 3 -n -i "$IFACE"; then
+      return 0
+    fi
+    sleep 2
+  done
+  return 1
+}
+
+# --- main ---
+for attempt in $(seq 1 $MAX_ATTEMPTS); do
+  log "Attempt $attempt/$MAX_ATTEMPTS"
+
+  cleanup_sessions
+  wait_for_device || { log "no $DEV"; reset_modem; continue; }
+
+  echo Y > /sys/class/net/$IFACE/qmi/raw_ip
+  ip link set "$IFACE" up
+
+  if ! wait_for_registration; then
+    log "not registered"
+    [[ $attempt -ge 2 ]] && reset_modem
+    continue
+  fi
+
+  if ! start_session; then
+    log "wds-start-network failed"
+    [[ $attempt -ge 2 ]] && reset_modem
+    continue
+  fi
+
+  if get_ip; then
+    log "online"
+    exit 0
+  fi
+  log "dhcp failed"
+done
+
+log "giving up after $MAX_ATTEMPTS attempts"
+exit 1

@@ -14,6 +14,15 @@ say () {
 say "Installing Bluetooth prerequisites"
 run "apt install -y bluez python3-dbus python3-gi"
 
+REBOOT_NEEDED=0
+say "Ensuring onboard Bluetooth is enabled (removing dtoverlay=disable-bt)"
+for cfg in /boot/firmware/config.txt /boot/config.txt; do
+  if [[ -f "$cfg" ]] && grep -qE '^[[:space:]]*dtoverlay=disable-bt[[:space:]]*$' "$cfg"; then
+    run "sed -i -E '/^[[:space:]]*dtoverlay=disable-bt[[:space:]]*\$/d' $cfg"
+    REBOOT_NEEDED=1
+  fi
+done
+
 say "Install hotspot-bluetooth"
 run "cp hotspot-bluetooth /usr/sbin/hotspot-bluetooth"
 run "chmod +x /usr/sbin/hotspot-bluetooth"
@@ -25,3 +34,4 @@ run "systemctl enable hotspot-bluetooth"
 run "systemctl restart hotspot-bluetooth"
 
 say "Done. Advertising as HotSpot-$(hostname)"
+[[ "$REBOOT_NEEDED" = "1" ]] && say "Reboot required: dtoverlay=disable-bt was removed from config.txt"

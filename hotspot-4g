@@ -10,10 +10,16 @@ MAX_ATTEMPTS=99
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
+stop_modemmanager() {
+  # ModemManager will hold /dev/cdc-wdm0 and make every non-proxied qmicli
+  # call return empty. Keep it out of the way for the whole session.
+  systemctl stop ModemManager.service 2>/dev/null || true
+}
+
 cleanup_sessions() {
   # Release any stale WDS clients from a previous run
-  qmicli -d "$DEV" --wds-reset 2>/dev/null || true
-  qmicli -d "$DEV" --wds-stop-network=disable-autoconnect 2>/dev/null || true
+  qmicli -p -d "$DEV" --wds-reset 2>/dev/null || true
+  qmicli -p -d "$DEV" --wds-stop-network=disable-autoconnect 2>/dev/null || true
   pkill -f "udhcpc.*$IFACE" 2>/dev/null || true
   ip addr flush dev "$IFACE" 2>/dev/null || true
   ip link set "$IFACE" down 2>/dev/null || true
@@ -28,26 +34,32 @@ wait_for_device() {
 }
 
 wait_for_registration() {
-  # Wait for "registered" on home or roaming, not just signal
-  for _ in $(seq 1 60); do
-    local out
-    out=$(qmicli -d "$DEV" --nas-get-serving-system 2>/dev/null || true)
+  local out err last_err=""
+  for i in $(seq 1 60); do
+    err=$(mktemp)
+    out=$(qmicli -p -d "$DEV" --nas-get-serving-system 2>"$err" || true)
     if echo "$out" | grep -qE "Registration state: 'registered'"; then
-      # Also check PS attach
-      if echo "$out" | grep -qE "PS: 'attached'|Data service: 'non-3gpp-and-3gpp'|Data service capabilities:.*gprs"; then
-        return 0
+      rm -f "$err"
+      return 0
+    fi
+    if [[ -z "$out" ]]; then
+      last_err=$(<"$err")
+      if (( i % 10 == 0 )) && [[ -n "$last_err" ]]; then
+        log "qmicli nas-get-serving-system: ${last_err//$'\n'/ | }"
       fi
     fi
+    rm -f "$err"
     sleep 2
   done
+  [[ -n "$last_err" ]] && log "last qmicli error: ${last_err//$'\n'/ | }"
   return 1
 }
 
 reset_modem() {
   log "Resetting modem via QMI..."
-  qmicli -d "$DEV" --dms-set-operating-mode=low-power 2>/dev/null || true
+  qmicli -p -d "$DEV" --dms-set-operating-mode=low-power 2>/dev/null || true
   sleep 3
-  qmicli -d "$DEV" --dms-set-operating-mode=online 2>/dev/null || true
+  qmicli -p -d "$DEV" --dms-set-operating-mode=online 2>/dev/null || true
   sleep 5
 }
 
@@ -75,6 +87,8 @@ get_ip() {
 }
 
 # --- main ---
+stop_modemmanager
+
 for attempt in $(seq 1 $MAX_ATTEMPTS); do
   log "Attempt $attempt/$MAX_ATTEMPTS"
 

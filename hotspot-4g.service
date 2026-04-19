@@ -2,12 +2,14 @@
 Description=Hotspot 4G bring-up
 After=network.target remote-fs.target syslog.target time.target
 After=wm8960-soundcard.service
+Conflicts=ModemManager.service
+Before=ModemManager.service
 
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/hotspot-4g
 RemainAfterExit=yes
-TimeoutStartSec=300
+TimeoutStartSec=600
 Restart=on-failure
 RestartSec=10
 

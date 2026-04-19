@@ -30,6 +30,10 @@ run "wget -O /etc/systemd/system/disable-wlan.service https://raw.githubusercont
 run "wget -O /etc/systemd/system/disable-wlan.timer https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/disable-wlan.timer"
 run "systemctl daemon-reload"
 
+say "Disabling ModemManager (conflicts with qmicli on /dev/cdc-wdm0)"
+run "systemctl disable --now ModemManager.service 2>/dev/null || true"
+run "systemctl mask ModemManager.service 2>/dev/null || true"
+
 say "Starting 4G"
 run "systemctl enable disable-wlan.timer"
 run "systemctl enable hotspot-4g.service"

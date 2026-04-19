@@ -60,7 +60,10 @@ prompt_with_gum() {
 
   APN="$(gum input --prompt "APN: " --value "${APN}")"
 
-  IP_TYPE="$(gum choose "IPv4" "IPv6")"
+  case "$(gum choose "IPv4" "IPv6")" in
+    IPv4) IP_TYPE="4" ;;
+    IPv6) IP_TYPE="6" ;;
+  esac
 
   AUTH="$(gum choose "" "PAP" "CHAP" "BOTH")"
 

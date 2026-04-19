@@ -11,8 +11,10 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
+RAW="https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master"
+
 say "Installing Bluetooth prerequisites"
-run "apt install -y bluez python3-dbus python3-gi"
+run "apt install -y bluez python3-dbus python3-gi wget"
 
 REBOOT_NEEDED=0
 say "Ensuring onboard Bluetooth is enabled (removing dtoverlay=disable-bt)"
@@ -54,12 +56,14 @@ EOF
 run "systemctl daemon-reload"
 run "systemctl restart bluetooth"
 
-say "Install hotspot-bluetooth"
-run "cp hotspot-bluetooth /usr/sbin/hotspot-bluetooth"
+say "Downloading hotspot-bluetooth"
+run "wget -O /usr/sbin/hotspot-bluetooth $RAW/hotspot-bluetooth"
 run "chmod +x /usr/sbin/hotspot-bluetooth"
 
-say "Install hotspot-bluetooth.service"
-run "cp hotspot-bluetooth.service /lib/systemd/system/hotspot-bluetooth.service"
+say "Downloading hotspot-bluetooth.service"
+run "wget -O /etc/systemd/system/hotspot-bluetooth.service $RAW/hotspot-bluetooth.service"
+
+say "Enable and start hotspot-bluetooth"
 run "systemctl daemon-reload"
 run "systemctl enable hotspot-bluetooth"
 run "systemctl restart hotspot-bluetooth"

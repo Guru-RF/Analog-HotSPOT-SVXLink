@@ -338,6 +338,9 @@ EOF
   run "wget -O /usr/sbin/install-4gmodule https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-4gmodule > /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-4gmodule"
 
+  say "Downloading install-bluetooth"
+  run "wget -O /usr/sbin/install-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-bluetooth > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/install-bluetooth"
   say "--> Done"
   say ""
   say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"

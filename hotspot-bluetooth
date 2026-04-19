@@ -294,6 +294,22 @@ class Advertisement(dbus.service.Object):
         log.info("Advertisement released: %s", self.path)
 
 
+def wait_for_bluez(bus, timeout=60):
+    import time
+    deadline = time.monotonic() + timeout
+    bus_obj = bus.get_object("org.freedesktop.DBus", "/org/freedesktop/DBus")
+    dbus_iface = dbus.Interface(bus_obj, "org.freedesktop.DBus")
+    while time.monotonic() < deadline:
+        try:
+            if dbus_iface.NameHasOwner(BLUEZ_SERVICE_NAME):
+                return True
+        except dbus.exceptions.DBusException:
+            pass
+        log.info("waiting for bluez...")
+        time.sleep(2)
+    return False
+
+
 def find_adapter(bus):
     remote_om = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE_NAME, "/"), DBUS_OM_IFACE
@@ -327,9 +343,19 @@ def main():
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
 
+    if not wait_for_bluez(bus):
+        log.error(
+            "bluez not available on D-Bus. Check: "
+            "'systemctl status bluetooth' and 'hciconfig -a'"
+        )
+        sys.exit(1)
+
     adapter = find_adapter(bus)
     if not adapter:
-        log.error("No Bluetooth adapter with GATT + LE advertising support found")
+        log.error(
+            "No Bluetooth adapter with GATT + LE advertising support found. "
+            "If you just removed dtoverlay=disable-bt, reboot first."
+        )
         sys.exit(1)
     log.info("Using adapter: %s", adapter)
     power_on_adapter(bus, adapter)

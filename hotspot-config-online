@@ -17,9 +17,17 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
+# Detect available serial port (prefer /dev/ttyAMA0, fall back to /dev/ttyS0)
+if [ -e /dev/ttyAMA0 ]; then
+  SERIAL_PORT="/dev/ttyAMA0"
+else
+  SERIAL_PORT="/dev/ttyS0"
+fi
+say "Using serial port ${SERIAL_PORT}"
+
 # Detect chip version and enable/disable monitor accordingly
 systemctl stop fmchip-monitor
-CHIPVERSION=$(sa818 --port /dev/ttyAMA0 version 2>&1 | awk '{print $6}')
+CHIPVERSION=$(sa818 --port ${SERIAL_PORT} version 2>&1 | awk '{print $6}')
 
 # Strip leading 'V' (e.g. V1.2 -> 1.2)
 NUMVER=${CHIPVERSION#V}
@@ -284,9 +292,9 @@ if [ $RESULT -eq 0 ]; then
   say "Configuring hotspot"
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
-  echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},0 --squelch 8" >> /usr/sbin/hotspot
-  echo "sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
-  echo "sa818 --port /dev/ttyAMA0 volume --level ${CPVOL}" >> /usr/sbin/hotspot
+  echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},0 --squelch 8" >> /usr/sbin/hotspot
+  echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
+  echo "sa818 --port ${SERIAL_PORT} volume --level ${CPVOL}" >> /usr/sbin/hotspot
   chmod +x /usr/sbin/hotspot
 
   run "/usr/sbin/hotspot"

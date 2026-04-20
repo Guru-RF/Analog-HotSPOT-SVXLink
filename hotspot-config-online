@@ -347,7 +347,7 @@ EOF
   run "chmod +x /usr/sbin/install-4gmodule"
 
   say "Downloading install-bluetooth"
-  run "wget -O /usr/sbin/install-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-bluetooth > /dev/null 2>&1"
+  run "wget -O /usr/sbin/install-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-bluetoot.sh> /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-bluetooth"
   say "--> Done"
   say ""

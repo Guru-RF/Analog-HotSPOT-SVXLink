@@ -1,0 +1,74 @@
+#!/bin/bash
+set -uo pipefail
+
+CONF="/etc/hotspot-4g.conf"
+IFACE=wwan0
+
+# Defaults — overridable from $CONF
+MONITOR_TARGETS="1.1.1.1 8.8.8.8"
+MONITOR_INTERVAL=60
+MONITOR_FAILS=3
+MONITOR_GRACE=180
+MONITOR_PING_TIMEOUT=5
+
+[[ -f "$CONF" ]] && source "$CONF"
+
+log() { echo "[$(date +%H:%M:%S)] $*"; }
+
+probe() {
+  for t in $MONITOR_TARGETS; do
+    if ping -I "$IFACE" -c 1 -W "$MONITOR_PING_TIMEOUT" -q "$t" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  # Some carriers/targets block ICMP — fall back to TCP/443
+  if command -v curl >/dev/null 2>&1; then
+    for t in $MONITOR_TARGETS; do
+      if curl --interface "$IFACE" --connect-timeout "$MONITOR_PING_TIMEOUT" \
+           --max-time $((MONITOR_PING_TIMEOUT + 3)) \
+           -s -o /dev/null "https://$t/"; then
+        return 0
+      fi
+    done
+  fi
+  return 1
+}
+
+restart_link() {
+  log "link stale — restarting hotspot-4g.service"
+  systemctl restart hotspot-4g.service || log "systemctl restart failed"
+  sleep "$MONITOR_GRACE"
+}
+
+log "starting (targets='$MONITOR_TARGETS' interval=${MONITOR_INTERVAL}s fails=${MONITOR_FAILS})"
+
+fails=0
+while true; do
+  # Don't probe while hotspot-4g is still bringing the session up
+  if ! systemctl is-active --quiet hotspot-4g.service; then
+    sleep "$MONITOR_INTERVAL"
+    continue
+  fi
+
+  # No interface yet — let hotspot-4g handle it
+  if [[ ! -d "/sys/class/net/$IFACE" ]]; then
+    sleep "$MONITOR_INTERVAL"
+    continue
+  fi
+
+  if probe; then
+    if (( fails > 0 )); then
+      log "link recovered after $fails failed probe(s)"
+    fi
+    fails=0
+  else
+    fails=$((fails + 1))
+    log "probe failed ($fails/$MONITOR_FAILS)"
+    if (( fails >= MONITOR_FAILS )); then
+      restart_link
+      fails=0
+    fi
+  fi
+
+  sleep "$MONITOR_INTERVAL"
+done

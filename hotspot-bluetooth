@@ -31,9 +31,16 @@ Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
                     talkgroup (tg), current talker (tk), last talker (ltk),
                     tx / rx flags. Clients should negotiate MTU >= 200.
 
-The server advertises as the device hostname and does not require pairing.
-Add link-layer security in BlueZ (`org.bluez.GattCharacteristic1` "encrypt-*"
-flags) if you want to force bonding.
+The server advertises as the device hostname and does not require pairing —
+the characteristics have no encrypt-* flags, so iOS/macOS (Web Bluetooth)
+connect without any prompt. Android's BLE stack, however, eagerly initiates
+bonding on first connect regardless of the peripheral's security flags; if
+BlueZ has no pairing agent registered it rejects the bond request and
+Android falls into a reconnect loop. To handle that, this service also
+registers a NoInputNoOutput "Just Works" agent that auto-accepts bonds and
+trusts the remote — the first Android connect pairs silently, subsequent
+reconnects skip the handshake. Add encrypt-* flags only if you actually
+want to *require* bonded clients.
 """
 
 import json
@@ -65,6 +72,12 @@ LE_ADVERTISING_MANAGER_IFACE = "org.bluez.LEAdvertisingManager1"
 LE_ADVERTISEMENT_IFACE = "org.bluez.LEAdvertisement1"
 
 ADAPTER_IFACE = "org.bluez.Adapter1"
+DEVICE_IFACE = "org.bluez.Device1"
+
+AGENT_MANAGER_IFACE = "org.bluez.AgentManager1"
+AGENT_IFACE = "org.bluez.Agent1"
+AGENT_PATH = "/org/guru_rf/hotspot/agent"
+AGENT_CAPABILITY = "NoInputNoOutput"
 
 DTMF_SVC_UUID = "6b1d6a10-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_WRITE_UUID = "6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d"
@@ -112,6 +125,77 @@ class NotSupportedException(dbus.exceptions.DBusException):
 
 class FailedException(dbus.exceptions.DBusException):
     _dbus_error_name = "org.bluez.Error.Failed"
+
+
+class RejectedException(dbus.exceptions.DBusException):
+    _dbus_error_name = "org.bluez.Error.Rejected"
+
+
+class JustWorksAgent(dbus.service.Object):
+    """NoInputNoOutput pairing agent.
+
+    Auto-accepts every prompt BlueZ throws at us. This is the "Just Works"
+    SSP model — fine for a hotspot-on-your-desk scenario, where any client
+    in radio range is already trusted by the owner. On pairing, the remote
+    device is marked Trusted so future reconnects skip authorization.
+    """
+
+    def __init__(self, bus):
+        dbus.service.Object.__init__(self, bus, AGENT_PATH)
+        self._bus = bus
+
+    def _trust_device(self, device_path):
+        try:
+            props = dbus.Interface(
+                self._bus.get_object(BLUEZ_SERVICE_NAME, device_path),
+                DBUS_PROP_IFACE,
+            )
+            props.Set(DEVICE_IFACE, "Trusted", dbus.Boolean(True))
+        except Exception as e:
+            log.warning("Failed to mark %s trusted: %s", device_path, e)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="", out_signature="")
+    def Release(self):
+        log.info("Pairing agent released")
+
+    @dbus.service.method(AGENT_IFACE, in_signature="os", out_signature="")
+    def AuthorizeService(self, device, uuid):
+        log.info("AuthorizeService %s %s — accepted", device, uuid)
+        self._trust_device(device)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="o", out_signature="s")
+    def RequestPinCode(self, device):
+        log.info("RequestPinCode %s — returning 0000", device)
+        self._trust_device(device)
+        return "0000"
+
+    @dbus.service.method(AGENT_IFACE, in_signature="o", out_signature="u")
+    def RequestPasskey(self, device):
+        log.info("RequestPasskey %s — returning 0", device)
+        self._trust_device(device)
+        return dbus.UInt32(0)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="ouq", out_signature="")
+    def DisplayPasskey(self, device, passkey, entered):
+        log.info("DisplayPasskey %s %06u (entered %u)", device, passkey, entered)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="os", out_signature="")
+    def DisplayPinCode(self, device, pincode):
+        log.info("DisplayPinCode %s %s", device, pincode)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="ou", out_signature="")
+    def RequestConfirmation(self, device, passkey):
+        log.info("RequestConfirmation %s %06u — confirmed", device, passkey)
+        self._trust_device(device)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="o", out_signature="")
+    def RequestAuthorization(self, device):
+        log.info("RequestAuthorization %s — authorized", device)
+        self._trust_device(device)
+
+    @dbus.service.method(AGENT_IFACE, in_signature="", out_signature="")
+    def Cancel(self):
+        log.info("Pairing cancelled by remote")
 
 
 class Application(dbus.service.Object):
@@ -610,6 +694,25 @@ def power_on_adapter(bus, adapter_path):
         bus.get_object(BLUEZ_SERVICE_NAME, adapter_path), DBUS_PROP_IFACE
     )
     props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+    # Let Android's eager-bonding stack succeed at pairing (see JustWorksAgent).
+    # PairableTimeout=0 means "always pairable"; the adapter isn't BR/EDR-
+    # discoverable (ControllerMode=le) so this only affects LE bonds.
+    try:
+        props.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(True))
+        props.Set(ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(0))
+    except dbus.exceptions.DBusException as e:
+        log.warning("Could not set Pairable on adapter: %s", e)
+
+
+def register_agent(bus):
+    agent = JustWorksAgent(bus)
+    manager = dbus.Interface(
+        bus.get_object(BLUEZ_SERVICE_NAME, "/org/bluez"), AGENT_MANAGER_IFACE
+    )
+    manager.RegisterAgent(AGENT_PATH, AGENT_CAPABILITY)
+    manager.RequestDefaultAgent(AGENT_PATH)
+    log.info("Registered %s pairing agent at %s", AGENT_CAPABILITY, AGENT_PATH)
+    return agent
 
 
 def local_name():
@@ -663,6 +766,14 @@ def main():
         sys.exit(1)
     log.info("Using adapter: %s", adapter)
     power_on_adapter(bus, adapter)
+
+    try:
+        register_agent(bus)
+    except dbus.exceptions.DBusException as e:
+        log.warning(
+            "Pairing agent registration failed (%s); Android clients that "
+            "initiate bonding will reject-loop until this is resolved.", e
+        )
 
     service_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE_NAME, adapter), GATT_MANAGER_IFACE

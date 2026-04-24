@@ -1,0 +1,13 @@
+[Unit]
+Description=SVXLink GPIO watchdog
+After=svxlink.service
+Wants=svxlink.service
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/svxlink-watchdog
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

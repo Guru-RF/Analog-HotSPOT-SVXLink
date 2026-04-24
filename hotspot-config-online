@@ -349,6 +349,10 @@ EOF
   say "Downloading install-bluetooth"
   run "wget -O /usr/sbin/install-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-bluetooth.sh> /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-bluetooth"
+
+  say "Downloading install-svxlink-watchdog"
+  run "wget -O /usr/sbin/install-svxlink-watchdog https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-svxlink-watchdog.sh > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/install-svxlink-watchdog"
   say "--> Done"
   say ""
   say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"

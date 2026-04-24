@@ -1,0 +1,12 @@
+# Claude Code local state
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor swap/backup files
+*.swp
+*.swo
+*~
+*.bak
+*.orig

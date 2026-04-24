@@ -97,30 +97,6 @@ sudo hotspot-4g-config
 
 ---
 
-## Repeater Mode
-
-Extras useful when you're running the box as an actual repeater rather than a personal hotspot.
-
-### svxlink-watchdog
-
-Watches **GPIO16 (PTT)** once per second. If the PTT line stays asserted (LOW) for more than **150 seconds**, it assumes SVXLink is stuck in a keyed state and runs `systemctl restart svxlink`. While the pin is LOW, the script logs a countdown every 5 seconds.
-
-Follow it live with:
-
-```bash
-sudo journalctl -t svxlink-watchdog -f
-```
-
-Install (no clone, no `hotspot-config` needed):
-
-```bash
-wget -qO- https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-svxlink-watchdog.sh | sudo bash
-```
-
-The installer pulls the script + systemd unit, enables `svxlink-watchdog.service`, and starts it.
-
----
-
 ## Available Products
 - **RF.Guru Analog Hotspot/Transceiver**  
   https://shop.rf.guru/collections/hotspot  
@@ -385,6 +361,30 @@ Install rpi-connect
 # 2nd USB port
 
 The second USB port can be used for ethernet, or to attach an AMBE dongle for Bridging to DMR !
+
+---
+
+# Repeater Mode
+
+Extras useful when you're running the box as an actual repeater rather than a personal hotspot.
+
+## svxlink-watchdog
+
+Watches **GPIO16 (PTT)** once per second. If the PTT line stays asserted (LOW) for more than **150 seconds**, it assumes SVXLink is stuck in a keyed state and runs `systemctl restart svxlink`. While the pin is LOW, the script logs a countdown every 5 seconds.
+
+Follow it live with:
+
+```bash
+sudo journalctl -t svxlink-watchdog -f
+```
+
+Install (no clone, no `hotspot-config` needed):
+
+```bash
+wget -qO- https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-svxlink-watchdog.sh | sudo bash
+```
+
+The installer pulls the script + systemd unit, enables `svxlink-watchdog.service`, and starts it.
 
 ---
 

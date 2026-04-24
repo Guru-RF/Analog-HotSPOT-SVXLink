@@ -2,7 +2,7 @@
 
 GPIO=16
 SERVICE="svxlink"
-LOW_TIME_REQUIRED=150   # 2.5 minutes
+LOW_TIME_REQUIRED=360   # 6 minutes
 CHECK_INTERVAL=1        # seconds
 
 low_since=0
@@ -53,10 +53,17 @@ while true; do
         if [ "$low_since" -eq 0 ]; then
             low_since="$now"
             restart_done_for_this_low=0
-            logger -t svxlink-watchdog "GPIO$GPIO went LOW"
+            logger -t svxlink-watchdog "GPIO$GPIO went LOW (restart after ${LOW_TIME_REQUIRED}s)"
         fi
 
         low_duration=$((now - low_since))
+        remaining=$((LOW_TIME_REQUIRED - low_duration))
+
+        if [ "$restart_done_for_this_low" -eq 0 ] \
+           && [ "$low_duration" -gt 0 ] \
+           && [ $((low_duration % 5)) -eq 0 ]; then
+            logger -t svxlink-watchdog "GPIO$GPIO LOW ${low_duration}s, ${remaining}s until restart"
+        fi
 
         if [ "$low_duration" -ge "$LOW_TIME_REQUIRED" ] && [ "$restart_done_for_this_low" -eq 0 ]; then
             logger -t svxlink-watchdog "GPIO$GPIO LOW for ${low_duration}s, restarting $SERVICE"

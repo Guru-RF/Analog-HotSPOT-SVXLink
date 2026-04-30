@@ -734,10 +734,36 @@ def find_adapter(bus):
 
 
 def power_on_adapter(bus, adapter_path):
+    # rfkill unblock first: newer BlueZ refuses Powered=true on a soft-blocked
+    # adapter and bluetoothd loops "Failed to set mode: Failed (0x03)". Some
+    # apt upgrades leave the BT radio soft-blocked on Pi.
+    try:
+        subprocess.run(
+            ["rfkill", "unblock", "bluetooth"],
+            capture_output=True, timeout=5, check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+        log.warning("rfkill unblock failed (continuing): %s", e)
+
     props = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE_NAME, adapter_path), DBUS_PROP_IFACE
     )
-    props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+
+    # If something blocks the adapter again mid-boot, retry once after a brief
+    # pause so we don't lose to the firmware-load race on the BCM combo chip.
+    last_err = None
+    for attempt in range(2):
+        try:
+            props.Set(ADAPTER_IFACE, "Powered", dbus.Boolean(True))
+            last_err = None
+            break
+        except dbus.exceptions.DBusException as e:
+            last_err = e
+            log.warning("Powered=true attempt %d failed: %s", attempt + 1, e)
+            time.sleep(2)
+    if last_err is not None:
+        raise last_err
+
     # Let Android's eager-bonding stack succeed at pairing (see JustWorksAgent).
     # PairableTimeout=0 means "always pairable"; the adapter isn't BR/EDR-
     # discoverable (ControllerMode=le) so this only affects LE bonds.

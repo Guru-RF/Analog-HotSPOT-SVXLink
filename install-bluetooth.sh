@@ -14,7 +14,10 @@ say () {
 RAW="https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master"
 
 say "Installing Bluetooth prerequisites"
-run "apt install -y bluez python3-dbus python3-gi wget"
+run "apt install -y bluez python3-dbus python3-gi wget rfkill"
+
+say "Unblocking bluetooth (rfkill)"
+run "rfkill unblock bluetooth"
 
 REBOOT_NEEDED=0
 say "Ensuring onboard Bluetooth is enabled (removing dtoverlay=disable-bt)"

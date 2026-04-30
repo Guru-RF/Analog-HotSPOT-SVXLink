@@ -1,11 +1,17 @@
 [Unit]
 Description=HotSpot Bluetooth DTMF Service
 After=bluetooth.service svxlink.service
-Requires=bluetooth.service
-BindsTo=bluetooth.service
+Wants=bluetooth.service
 
 [Service]
 Type=simple
+# BCM43430A1 firmware patch can take 10–15s after kernel boot. bluetooth.service
+# has ConditionPathIsDirectory=/sys/class/bluetooth and silently skips itself
+# if evaluated before the chip registers — leaving bluetoothd dead for the
+# whole boot. Wait until the device is up, then force-start bluetooth so its
+# condition re-evaluates against a populated /sys/class/bluetooth.
+ExecStartPre=/bin/sh -c 'for i in $(seq 1 60); do [ -e /sys/class/bluetooth/hci0 ] && exit 0; sleep 1; done; echo "no /sys/class/bluetooth/hci0 after 60s" >&2; exit 1'
+ExecStartPre=/bin/systemctl start bluetooth.service
 ExecStart=/usr/sbin/hotspot-bluetooth
 Restart=always
 RestartSec=3

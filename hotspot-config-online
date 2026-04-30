@@ -329,22 +329,34 @@ EOF
   say "Updating Logic.tcl"
   run "wget -O /usr/share/svxlink/events.d/Logic.tcl https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/Logic.tcl > /dev/null 2>&1"
 
+  RELOAD_SYSTEMD=0
+
   if [ -f /usr/sbin/hotspot-bluetooth ]; then
     say "Updating hotspot-bluetooth"
     run "wget -O /usr/sbin/hotspot-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-bluetooth > /dev/null 2>&1"
     run "chmod +x /usr/sbin/hotspot-bluetooth"
+    run "wget -O /etc/systemd/system/hotspot-bluetooth.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-bluetooth.service > /dev/null 2>&1"
+    RELOAD_SYSTEMD=1
   fi
 
   if [ -f /usr/sbin/hotspot-4g ]; then
     say "Updating hotspot-4g"
     run "wget -O /usr/sbin/hotspot-4g https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g > /dev/null 2>&1"
     run "chmod +x /usr/sbin/hotspot-4g"
+    run "wget -O /etc/systemd/system/hotspot-4g.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g.service > /dev/null 2>&1"
+    RELOAD_SYSTEMD=1
   fi
 
   if [ -f /usr/sbin/hotspot-4g-monitor ]; then
     say "Updating hotspot-4g-monitor"
     run "wget -O /usr/sbin/hotspot-4g-monitor https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g-monitor > /dev/null 2>&1"
     run "chmod +x /usr/sbin/hotspot-4g-monitor"
+    run "wget -O /etc/systemd/system/hotspot-4g-monitor.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g-monitor.service > /dev/null 2>&1"
+    RELOAD_SYSTEMD=1
+  fi
+
+  if [ "$RELOAD_SYSTEMD" = "1" ]; then
+    run "systemctl daemon-reload"
   fi
 
   say "Downloading hotspot-options"

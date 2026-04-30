@@ -112,6 +112,7 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
 
   if get_ip; then
     log "online"
+    /usr/sbin/hotspot_dtmf "D912#"
     if ip link show wlan0 >/dev/null 2>&1; then
       log "disabling wlan0 until next reboot"
       ip link set wlan0 down 2>/dev/null || true

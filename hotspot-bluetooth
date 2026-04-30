@@ -95,6 +95,8 @@ SVXLINK_CONF = "/etc/svxlink/svxlink.conf"
 HOTSPOT_SCRIPT = "/usr/sbin/hotspot"
 FEED_IP_REFRESH = 30.0       # seconds
 FEED_HEARTBEAT = 3.0         # seconds between "unchanged" pushes
+FEED_SIGNAL_REFRESH = 30.0   # seconds between qmicli signal polls
+QMICLI_DEVICE = "/dev/cdc-wdm0"
 
 # Whitelisted commands. Each entry: (fire_and_forget, argv).
 # "fire_and_forget" commands notify "ok <name>" immediately and exec in the
@@ -455,10 +457,12 @@ class StateFeed:
             "ltk": "",
             "tx": 0,
             "rx": 0,
+            "sg": "",
         }
         self._last_payload = None
         self._last_sent = 0.0
         self._last_ip_refresh = 0.0
+        self._last_signal_refresh = 0.0
 
     def start(self):
         threading.Thread(target=self._run, daemon=True).start()
@@ -499,6 +503,40 @@ class StateFeed:
             return ip
         except Exception:
             return ""
+
+    def _refresh_signal(self):
+        # The 4G stack masks ModemManager and drives the modem with qmicli, so
+        # mmcli would always see "no modem". The -p flag routes through
+        # qmi-proxy, which serializes access with hotspot-4g (it holds a CID
+        # via --client-no-release-cid). Without -p we'd collide.
+        if not os.path.exists(QMICLI_DEVICE):
+            return ""
+        try:
+            r = subprocess.run(
+                ["qmicli", "-p", "-d", QMICLI_DEVICE,
+                 "--nas-get-signal-strength"],
+                capture_output=True, text=True, timeout=5,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+            return ""
+        if r.returncode != 0:
+            return ""
+        # Output format (LTE example):
+        #   Current:
+        #           Network 'lte': '-78 dBm'
+        #   RSSI:
+        #           Network 'lte': '-78 dBm'
+        # Prefer Current → RSSI → RSRP. Current/RSSI match the "bars" mental
+        # model; RSRP runs ~30 dB lower on LTE and would make a fine link
+        # look poor.
+        for key in ("Current", "RSSI", "RSRP"):
+            m = re.search(
+                rf"\b{key}:\s*\n\s*Network\s+'[^']*':\s*'(-?\d+(?:\.\d+)?)\s*dBm'",
+                r.stdout,
+            )
+            if m:
+                return int(float(m.group(1)))
+        return ""
 
     def _open_log(self, seek_end):
         f = open(SVXLINK_LOGFILE, "r", encoding="utf-8", errors="replace")
@@ -577,7 +615,9 @@ class StateFeed:
         self.state["cs"] = self._read_callsign()
         self.state["fq"] = self._read_frequency()
         self.state["ip"] = self._read_ip()
+        self.state["sg"] = self._refresh_signal()
         self._last_ip_refresh = time.monotonic()
+        self._last_signal_refresh = self._last_ip_refresh
 
         f = None
         ino = None
@@ -612,6 +652,10 @@ class StateFeed:
                 if new_ip:
                     self.state["ip"] = new_ip
                 self._last_ip_refresh = now
+
+            if now - self._last_signal_refresh > FEED_SIGNAL_REFRESH:
+                self.state["sg"] = self._refresh_signal()
+                self._last_signal_refresh = now
 
             self._maybe_push(now)
             time.sleep(0.1)

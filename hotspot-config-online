@@ -326,6 +326,27 @@ EOF
   systemctl restart svxlink
   systemctl restart fmchip-monitor
 
+  say "Updating Logic.tcl"
+  run "wget -O /usr/share/svxlink/events.d/Logic.tcl https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/Logic.tcl > /dev/null 2>&1"
+
+  if [ -f /usr/sbin/hotspot-bluetooth ]; then
+    say "Updating hotspot-bluetooth"
+    run "wget -O /usr/sbin/hotspot-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-bluetooth > /dev/null 2>&1"
+    run "chmod +x /usr/sbin/hotspot-bluetooth"
+  fi
+
+  if [ -f /usr/sbin/hotspot-4g ]; then
+    say "Updating hotspot-4g"
+    run "wget -O /usr/sbin/hotspot-4g https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g > /dev/null 2>&1"
+    run "chmod +x /usr/sbin/hotspot-4g"
+  fi
+
+  if [ -f /usr/sbin/hotspot-4g-monitor ]; then
+    say "Updating hotspot-4g-monitor"
+    run "wget -O /usr/sbin/hotspot-4g-monitor https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-4g-monitor > /dev/null 2>&1"
+    run "chmod +x /usr/sbin/hotspot-4g-monitor"
+  fi
+
   say "Downloading hotspot-options"
   run "wget -O /usr/sbin/hotspot-options https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-options > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-options"
@@ -368,7 +389,7 @@ EOF
   say ""
   say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
   say ""
-  say "If this is your first time running the config script please reboot your system with:"
+  say "please reboot your system with:"
   say "run [>sudo reboot]"
 
   rm -f /needsconfig

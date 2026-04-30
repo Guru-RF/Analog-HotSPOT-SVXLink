@@ -127,7 +127,7 @@ proc manual_identification {} {
       }
     }
   }
-  playMsg "Default" "press_0_for_help"
+  #playMsg "Default" "press_0_for_help"
   playSilence 250;
 }
 
@@ -471,6 +471,16 @@ proc dtmf_cmd_received {cmd} {
     playMsg "Default" "decimal";
     spellWord $ip4;
     return 1
+  }
+  
+  if {$cmd == "D912"} {
+    return 1
+     playMsg "Default" "connected";
+  }
+  
+  if {$cmd == "D913"} {
+    return 1
+     playMsg "Default" "disconnected";
   }
 
   return 0

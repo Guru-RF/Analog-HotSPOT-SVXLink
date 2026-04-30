@@ -3,6 +3,8 @@ set -uo pipefail
 
 CONF="/etc/hotspot-4g.conf"
 IFACE=wwan0
+DTMF_HELPER=/usr/sbin/hotspot_dtmf
+DTMF_DOWN_CODE="D913#"
 
 # Defaults — overridable from $CONF
 MONITOR_TARGETS="1.1.1.1 8.8.8.8"
@@ -64,6 +66,11 @@ while true; do
   else
     fails=$((fails + 1))
     log "probe failed ($fails/$MONITOR_FAILS)"
+    if (( fails == 1 )); then
+      log "signalling SVXLink with DTMF $DTMF_DOWN_CODE"
+      "$DTMF_HELPER" "$DTMF_DOWN_CODE" >/dev/null 2>&1 \
+        || log "DTMF $DTMF_DOWN_CODE failed"
+    fi
     if (( fails >= MONITOR_FAILS )); then
       restart_link
       fails=0

@@ -153,12 +153,29 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `ltk` | string | callsign of the last talker that finished |
   | `tx` | 0 / 1 | SVXLink transmitter on |
   | `rx` | 0 / 1 | local squelch open (RF carrier present) |
+  | `sg` | int / "" | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`); `""` when no modem / not registered |
 
   Example:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78}
   ```
+
+  Rough buckets the app can use for a "bars" indicator:
+
+  | dBm range | Signal |
+  | --- | --- |
+  | ≥ −70 | excellent |
+  | −70 … −85 | good |
+  | −85 … −100 | fair |
+  | −100 … −110 | weak |
+  | < −110 | very poor / unreliable |
+
+  Note: `sg` is the modem's `Current` / `RSSI` reading (general signal), not
+  LTE `RSRP`. RSRP runs ~30 dB lower than RSSI on LTE and would make a
+  perfectly fine link look poor in a "bars" UI. Read via `qmicli -p` so it
+  shares the modem cleanly with `hotspot-4g` (which holds a CID with
+  `--client-no-release-cid`).
 
 - Cadence: one notification on every state change, plus a keepalive every
   ~3 s even when nothing changed. Subscribing immediately replays the last

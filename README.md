@@ -324,7 +324,7 @@ the companion app — no PIN, the hotspot auto-accepts on first connect.
 
 ### Belgian users — SvxPortalApp
 
-If you're on the Belgian RF.Guru reflector, use **SvxPortalApp**:
+If you're on the Belgian reflector, use **SvxPortalApp**:
 
 https://github.com/Guru-RF/SvxPortalApp
 

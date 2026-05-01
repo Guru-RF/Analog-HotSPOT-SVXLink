@@ -326,7 +326,7 @@ the companion app — no PIN, the hotspot auto-accepts on first connect.
 
 If you're on the Belgian reflector, use **SvxPortalApp**:
 
-https://github.com/Guru-RF/SvxPortalApp
+https://github.com/Guru-RF/SvxPortalApp/releases
 
 Currently available for **macOS / Windows / Linux**; iOS and Android will
 follow.
@@ -340,7 +340,7 @@ interest in deploying it on your own reflector, please get in touch.
 There is also a standalone companion app that talks to any hotspot over
 BLE without any reflector-side dependency:
 
-https://github.com/Guru-RF/Analog-HotSPOT-App
+https://github.com/Guru-RF/Analog-HotSPOT-App/releases
 
 Available for **macOS / Windows / Linux**; iOS and Android will follow.
 It has no map and you need to define the talkgroups manually.

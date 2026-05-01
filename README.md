@@ -308,6 +308,45 @@ For the CTCSS TX tone best to pick on between 67 and 85.4 (best audio quality)
 
 ---
 
+# Installing Bluetooth for the HotSpot companion app
+
+Enables a BLE GATT service so a phone or laptop can drive the hotspot
+(send DTMF, restart SVXLink, toggle 4G, watch live state) without SSH.
+
+Install on the hotspot:
+
+```bash
+    sudo /usr/sbin/install-bluetooth
+```
+
+After install, the device advertises over BLE as its hostname. Pair from
+the companion app — no PIN, the hotspot auto-accepts on first connect.
+
+### Belgian users — SvxPortalApp
+
+If you're on the Belgian RF.Guru reflector, use **SvxPortalApp**:
+
+https://github.com/Guru-RF/SvxPortalApp
+
+Currently available for **macOS / Windows / Linux**; iOS and Android will
+follow.
+
+For everybody else: the portal app integrates deeply with the reflector
+and needs extra software running on the reflector side. If there's
+interest in deploying it on your own reflector, please get in touch.
+
+### Standalone companion app — everyone
+
+There is also a standalone companion app that talks to any hotspot over
+BLE without any reflector-side dependency:
+
+https://github.com/Guru-RF/Analog-HotSPOT-App
+
+Available for **macOS / Windows / Linux**; iOS and Android will follow.
+It has no map and you need to define the talkgroups manually.
+
+---
+
 # Modify Talkgroups on the Dashboard
 
 Edit base talkgroups:

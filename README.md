@@ -313,6 +313,13 @@ For the CTCSS TX tone best to pick on between 67 and 85.4 (best audio quality)
 Enables a BLE GATT service so a phone or laptop can drive the hotspot
 (send DTMF, restart SVXLink, toggle 4G, watch live state) without SSH.
 
+First, ensure that the PI is up-to-date.
+
+```bash
+    sudo apt -y update
+    sudo apt -y upgrade
+```
+
 Install on the hotspot:
 
 ```bash

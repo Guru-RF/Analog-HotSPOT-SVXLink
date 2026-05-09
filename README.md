@@ -80,9 +80,15 @@ sudo hotspot-on-webportal
 
 ---
 
-## Optional
+## 4G/LTE Setup
 
-for the 4G version install the module via:
+Best to install these first — once 4G is up, `wlan0` is brought down and
+you'll need an alternate way in if anything misbehaves:
+
+- [Raspberry Pi Connect](https://github.com/Guru-RF/Analog-HotSPOT-SVXLink#raspberry-pi-connect) — remote shell over the internet
+- [Installing Bluetooth for the HotSpot companion app](https://github.com/Guru-RF/Analog-HotSPOT-SVXLink#installing-bluetooth-for-the-hotspot-companion-app) — BLE fallback to toggle 4G off if it gets stuck
+
+For the 4G version install the module via:
 (it's default configured for the https://alwaysconnected.eu/ provider)
 
 ```bash
@@ -313,23 +319,33 @@ For the CTCSS TX tone best to pick on between 67 and 85.4 (best audio quality)
 Enables a BLE GATT service so a phone or laptop can drive the hotspot
 (send DTMF, restart SVXLink, toggle 4G, watch live state) without SSH.
 
-First, ensure that the PI is up-to-date.
-
-```bash
-    sudo apt -y update
-    sudo apt -y upgrade
-```
-
 Install on the hotspot:
 
 ```bash
     sudo /usr/sbin/install-bluetooth
 ```
 
-After install, the device advertises over BLE as its hostname. Pair from
-the companion app — no PIN, the hotspot auto-accepts on first connect.
+After install, the device advertises over BLE as its hostname.
 
-### Belgian users — SvxPortalApp
+## On the client (Windows / macOS / Linux / iOS / Android)
+
+- **Turn Bluetooth on** in the OS — that's all the OS-level setup needed.
+- **Do not pair the hotspot** in the system Bluetooth settings. You won't
+  see it there anyway, and pairing isn't required.
+
+This is **Bluetooth Low Energy (BLE)**, not classic Bluetooth. BLE works
+differently from headphones / keyboards / car kits:
+
+- Devices expose **GATT services** identified by UUID. The companion app
+  scans for the hotspot's service UUID directly and connects to it; the
+  device never shows up in the OS "Bluetooth devices" list.
+- **No pairing / PIN.** The link is unencrypted and the hotspot accepts
+  any client in radio range that knows the service UUID. (This is fine
+  for a desk hotspot; if yours is mobile / public, see `BLE.md` for the
+  bonded-mode flag.)
+- The OS radio just needs to be **powered on** so the app can use it.
+
+## Belgian users — SvxPortalApp
 
 If you're on the Belgian reflector, use **SvxPortalApp**:
 
@@ -342,7 +358,7 @@ For everybody else: the portal app integrates deeply with the reflector
 and needs extra software running on the reflector side. If there's
 interest in deploying it on your own reflector, please get in touch.
 
-### Standalone companion app — everyone
+## Standalone companion app — everyone
 
 There is also a standalone companion app that talks to any hotspot over
 BLE without any reflector-side dependency:
@@ -384,14 +400,6 @@ Edit talkgroup buttons:
 Connect remotely to your hotspot.
 
 https://connect.raspberrypi.com
-
-Update the system:
-
-```bash
-    sudo apt -y update
-    sudo apt -y upgrade
-    sudo reboot
-```
 
 Install rpi-connect
 

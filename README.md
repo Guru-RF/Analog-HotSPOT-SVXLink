@@ -388,6 +388,12 @@ Edit talkgroup buttons:
 
 # Backup the certificate
 
+> **Note:** the reflector certificate is only valid for **90 days** and
+> SVXLink **renews it automatically** as long as the hotspot is online
+> and registered on the reflector. You normally don't need to back it up.
+> This is mostly convenient when **flashing a fresh SD card** so you can
+> skip the sysop-signing wait on the new install.
+
 The reflector cert/key live under `/var/lib/svxlink/pki/`. Once your sysop
 has signed it, back it up so you don't have to wait for re-signing if you
 re-flash the SD card.

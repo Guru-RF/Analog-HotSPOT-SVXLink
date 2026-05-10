@@ -386,6 +386,58 @@ Edit talkgroup buttons:
 
 ---
 
+# Backup the certificate
+
+The reflector cert/key live under `/var/lib/svxlink/pki/`. Once your sysop
+has signed it, back it up so you don't have to wait for re-signing if you
+re-flash the SD card.
+
+The hotspot already runs a local webserver at <http://hotspot.local> with
+its document root at `/var/www/html/` — drop the tarball there and pull
+it from your laptop.
+
+```bash
+    sudo tar czf /var/www/html/svxlink-pki-$(hostname)-$(date +%Y%m%d).tgz -C /var/lib/svxlink pki
+```
+
+Download from the browser:
+
+    http://hotspot.local/svxlink-pki-<hostname>-<date>.tgz
+
+**Then immediately remove it from the web root** — the private key is
+inside, and anyone on the same network can grab it while it sits there:
+
+```bash
+    sudo rm -f /var/www/html/svxlink-pki-*.tgz
+```
+
+To restore on a fresh install (after running `hotspot-config` once so the
+directory exists), copy the tarball back with `scp` using the default
+`hotspot` / `hotspot` login.
+
+From your laptop:
+
+```bash
+    scp svxlink-pki-<hostname>-<date>.tgz hotspot@hotspot.local:/tmp/
+```
+
+**On Windows:** modern Windows 10/11 ships `scp` via OpenSSH so the
+command above works as-is in PowerShell. If you prefer a GUI, use
+[WinSCP](https://winscp.net/) — connect to `hotspot.local` on port 22
+with username `hotspot` / password `hotspot`, then drag the `.tgz` file
+into `/tmp/` on the right-hand pane.
+
+Then on the hotspot:
+
+```bash
+    sudo tar xzf /tmp/svxlink-pki-*.tgz -C /var/lib/svxlink
+    sudo chown -R svxlink:svxlink /var/lib/svxlink/pki
+    sudo rm -f /tmp/svxlink-pki-*.tgz
+    sudo systemctl restart svxlink
+```
+
+---
+
 # Remove certificates (and request a new one)
 
 ```bash

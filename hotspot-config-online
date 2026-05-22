@@ -25,9 +25,14 @@ else
 fi
 say "Using serial port ${SERIAL_PORT}"
 
-# Detect chip version and enable/disable monitor accordingly
+# Detect chip variant + firmware version and enable/disable monitor accordingly.
+# Example output: "SA818: INFO: Firmware SA818, version: V1.1"
+#             or: "SA818: INFO: Firmware SA818PRO, version: V1.1"
 systemctl stop fmchip-monitor
-CHIPVERSION=$(sa818 --port ${SERIAL_PORT} version 2>&1 | awk '{print $6}')
+CHIPRAW=$(sa818 --port ${SERIAL_PORT} version 2>&1)
+CHIPNAME=$(echo "${CHIPRAW}" | awk '{print $4}')
+CHIPNAME=${CHIPNAME%,}                         # strip trailing comma
+CHIPVERSION=$(echo "${CHIPRAW}" | awk '{print $6}')
 
 # Strip leading 'V' (e.g. V1.2 -> 1.2)
 NUMVER=${CHIPVERSION#V}
@@ -37,14 +42,14 @@ VMINOR=${NUMVER#*.}
 REFMAJOR=1
 REFMINOR=2
 
-if (( VMAJOR > REFMAJOR || (VMAJOR == REFMAJOR && VMINOR >= REFMINOR) )); then
-  # CHIPVERSION >= V1.2
-  say "CHIP version ${CHIPVERSION} detected disabling chip monitor"
+# PRO variant is a newer chip generation — treat as ">= V1.2" regardless of
+# its own version numbering.
+if [[ "${CHIPNAME}" == *PRO* ]] || (( VMAJOR > REFMAJOR || (VMAJOR == REFMAJOR && VMINOR >= REFMINOR) )); then
+  say "CHIP ${CHIPNAME} version ${CHIPVERSION} detected disabling chip monitor"
   systemctl stop fmchip-monitor
   systemctl disable fmchip-monitor
 else
-  # CHIPVERSION < V1.2
-  say "old CHIP version ${CHIPVERSION} detected enabling chip monitor"
+  say "old CHIP ${CHIPNAME} version ${CHIPVERSION} detected enabling chip monitor"
   systemctl enable fmchip-monitor
   systemctl start fmchip-monitor
 fi

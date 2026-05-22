@@ -1,6 +1,6 @@
 [Unit]
 Description=HotSpot Bluetooth DTMF Service
-After=bluetooth.service svxlink.service
+After=bluetooth.service
 Wants=bluetooth.service
 
 [Service]

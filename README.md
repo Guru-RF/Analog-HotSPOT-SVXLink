@@ -257,7 +257,8 @@ To set up multiple talkgroups for monitoring, configure them in hotspot-config u
     8++, 23+, 50, 51, 52, 53, 54, 55
 
 The TX CTCSS tone remains the same across all talkgroups.
-The plus signs (+) indicate priority levels.
+The plus signs (+) indicate priority levels. More plus signs mean higher priority. While a talk group is selected, and there is activity on a talk group with higher priority, the higher prio talk group will be selected unless there have been local activity on the node.
+
 
 Temporarily monitor (for one hour) another talkgroup:
 

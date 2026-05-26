@@ -45,7 +45,7 @@
 
 13. Start configuration:
 
-Use your own email adress ! And use real coordinates, some reflectors do not like hotspots info to be hidden ! Look at the local AUP!
+Use your own email adress ! And use real coordinates, some reflectors do not like hotspots info to be hidden ! Look at the local AUP! Callsigns in UPPERCASE !
 
 ```bash
 sudo hotspot-config

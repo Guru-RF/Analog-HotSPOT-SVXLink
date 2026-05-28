@@ -326,6 +326,12 @@ Install on the hotspot:
     sudo /usr/sbin/install-bluetooth
 ```
 
+If you get a “command not found” message, run hotspot-config again. Just press Enter and check that all settings are correct. It will download the latest software and update the hotspot, rerun install-bluetooth afterwards:
+
+```bash
+    sudo /usr/sbin/hotspot-config
+```
+
 After install, the device advertises over BLE as its hostname.
 
 ## On the client (Windows / macOS / Linux / iOS / Android)

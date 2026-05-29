@@ -12,9 +12,9 @@ $tgdb_array = [
     '53'     => 'Talkgroup 3',
     '54'     => 'Talkgroup 4',
     '55'     => 'Talkgroup 5',
-    '1745'     => 'ON0ORA Local off-net',
+    '1745'     => '145.500 Simplex Club Opwijk',
     '8400'     => '145.400 Simplex Club Oostende',
     '8401'     => '145.7125 VHF Repeater Oostende',
-    '9000'     => '145.7 VHF Repeater Gent',
+    '8670'     => '145.4250 Simplex Club Koksijde',
     ];
 ?>

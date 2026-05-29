@@ -27,7 +27,7 @@ define("KEY10", array(' TG55 ','9155#','orange'));
 define("KEY11", array(' TG1745 ','911745#','purple'));
 define("KEY12", array(' TG8400 ','918400#','blue'));
 define("KEY13", array(' TG8401 ','918401#','purple'));
-define("KEY14", array(' TG9000 ','919000#','purple'));
+define("KEY14", array(' TG8670 ','918670#','purple'));
 define("KEY15", array(' -- ','*D15#','purple'));
 define("KEY16", array(' -- ','*D16#','purple'));
 define("KEY17", array(' TALKGROUP ','9*#','red'));

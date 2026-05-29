@@ -232,7 +232,8 @@ sudo tail -f /var/log/svxlink
 
 To activate a talkgroup, send the corresponding CTCSS tone from the mapping while in TG0.
 
-You’ll hear a bleep tone 15 seconds after a QSO.
+You need to be in TG0, you can wait until there is no traffic, you’ll hear a bleep tone 15 seconds after a QSO ended.
+
 This will instantly open the talkgroup – no need for double presses like before.
 You can start speaking immediately!
 

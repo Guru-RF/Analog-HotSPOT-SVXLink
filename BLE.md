@@ -148,6 +148,7 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `ip` | string | device's outbound IP (best-effort) |
   | `cs` | string | callsign from `/etc/svxlink/svxlink.conf` |
   | `fq` | string | frequency parsed from `/usr/sbin/hotspot` |
+  | `ctx` | string | CTCSS TX tone in Hz, parsed from `--ctcss <tone>,0` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured |
   | `tg` | string | current talkgroup number |
   | `tk` | string | callsign of the active talker (empty if none) |
   | `ltk` | string | callsign of the last talker that finished |
@@ -169,13 +170,13 @@ would show, streamed as JSON. Works even on units that have no OLED.
   Example with 4G online:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
   ```
 
   Example with no 4G module installed:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
   ```
 
   Note: `mt` and `ct` are read once from `/etc/svxlink/svxlink.conf` at

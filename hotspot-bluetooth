@@ -461,6 +461,7 @@ class StateFeed:
             "rf": "",
             "mt": "",
             "ct": "",
+            "ctx": "",
         }
         self._last_payload = None
         self._last_sent = 0.0
@@ -522,6 +523,20 @@ class StateFeed:
                         m = re.search(r'--frequency\s+([0-9]+(?:\.[0-9]+)?)', line)
                         if m:
                             return m.group(1)
+        except Exception:
+            pass
+        return ""
+
+    def _read_tx_ctcss(self):
+        # CTCSS TX tone — hotspot-config writes `--ctcss <tone>,0` into
+        # /usr/sbin/hotspot (the trailing ,0 is the RX squelch tone, always
+        # 0 here because RX CTCSS is handled by svxlink, not the SA818).
+        try:
+            with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    m = re.search(r'--ctcss\s+([0-9]+(?:\.[0-9]+)?)\s*,', line)
+                    if m:
+                        return m.group(1)
         except Exception:
             pass
         return ""
@@ -659,6 +674,7 @@ class StateFeed:
         self.state["mt"] = self._read_monitor_tgs()
         self.state["ct"] = self._read_ctcss_to_tg()
         self.state["fq"] = self._read_frequency()
+        self.state["ctx"] = self._read_tx_ctcss()
         self.state["ip"] = self._read_ip()
         self.state["sg"] = self._refresh_signal()
         self._last_ip_refresh = time.monotonic()

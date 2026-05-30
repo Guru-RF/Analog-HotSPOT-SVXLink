@@ -154,11 +154,12 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `tx` | 0 / 1 | SVXLink transmitter on |
   | `rx` | 0 / 1 | local squelch open (RF carrier present) |
   | `sg` | int / "" | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`); `""` when no modem / not registered |
+  | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
 
   Example:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
   ```
 
   Rough buckets the app can use for a "bars" indicator:

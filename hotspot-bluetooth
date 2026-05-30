@@ -458,6 +458,7 @@ class StateFeed:
             "tx": 0,
             "rx": 0,
             "sg": "",
+            "rf": "",
         }
         self._last_payload = None
         self._last_sent = 0.0
@@ -468,13 +469,19 @@ class StateFeed:
         threading.Thread(target=self._run, daemon=True).start()
 
     def _read_callsign(self):
+        return self._read_conf_value("CALLSIGN")
+
+    def _read_reflector(self):
+        return self._read_conf_value("DNS_DOMAIN")
+
+    def _read_conf_value(self, key):
         try:
             with open(SVXLINK_CONF, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
-                    m = re.match(r'^\s*CALLSIGN\s*=\s*"?([^"\s]+)"?\s*$', line)
+                    m = re.match(rf'^\s*{key}\s*=\s*"?([^"\s]+)"?\s*$', line)
                     if m:
                         return m.group(1).strip()
         except Exception:
@@ -613,6 +620,7 @@ class StateFeed:
 
     def _run(self):
         self.state["cs"] = self._read_callsign()
+        self.state["rf"] = self._read_reflector()
         self.state["fq"] = self._read_frequency()
         self.state["ip"] = self._read_ip()
         self.state["sg"] = self._refresh_signal()

@@ -153,13 +153,27 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `ltk` | string | callsign of the last talker that finished |
   | `tx` | 0 / 1 | SVXLink transmitter on |
   | `rx` | 0 / 1 | local squelch open (RF carrier present) |
-  | `sg` | int / "" | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`); `""` when no modem / not registered |
+  | `sg` | int / 0 / null | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`). Tri-state — see below. |
   | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
 
-  Example:
+  `sg` semantics, so the app can tell "no modem" apart from "modem but no signal":
+
+  | Value | Meaning | Suggested UI |
+  | --- | --- | --- |
+  | `null` (JSON null) | no 4G hardware on this hotspot (`/dev/cdc-wdm0` missing, qmicli not installed) | hide the 4G section entirely |
+  | `0` | 4G hardware present but not registered, qmicli timed out, or output unparseable | show "no signal" / "searching" |
+  | negative int (e.g. `-78`) | live signal in dBm | render bars from value |
+
+  Example with 4G online:
 
   ```json
   {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
+  ```
+
+  Example with no 4G module installed:
+
+  ```json
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link"}
   ```
 
   Rough buckets the app can use for a "bars" indicator:

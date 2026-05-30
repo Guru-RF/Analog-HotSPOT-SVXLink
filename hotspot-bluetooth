@@ -457,7 +457,7 @@ class StateFeed:
             "ltk": "",
             "tx": 0,
             "rx": 0,
-            "sg": "",
+            "sg": None,
             "rf": "",
         }
         self._last_payload = None
@@ -512,22 +512,31 @@ class StateFeed:
             return ""
 
     def _refresh_signal(self):
+        # Return values are tri-state so the client app can distinguish
+        # "no 4G hardware" from "4G hardware present but no signal":
+        #   None  -> no 4G modem on this device (hide 4G UI)
+        #   0     -> 4G hardware present but not registered / unparseable
+        #   <0    -> real signal in dBm
+        #
         # The 4G stack masks ModemManager and drives the modem with qmicli, so
         # mmcli would always see "no modem". The -p flag routes through
         # qmi-proxy, which serializes access with hotspot-4g (it holds a CID
         # via --client-no-release-cid). Without -p we'd collide.
         if not os.path.exists(QMICLI_DEVICE):
-            return ""
+            return None
         try:
             r = subprocess.run(
                 ["qmicli", "-p", "-d", QMICLI_DEVICE,
                  "--nas-get-signal-strength"],
                 capture_output=True, text=True, timeout=5,
             )
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
-            return ""
+        except FileNotFoundError:
+            # qmicli not installed yet — treat as no 4G stack.
+            return None
+        except (subprocess.TimeoutExpired, Exception):
+            return 0
         if r.returncode != 0:
-            return ""
+            return 0
         # Output format (LTE example):
         #   Current:
         #           Network 'lte': '-78 dBm'
@@ -543,7 +552,7 @@ class StateFeed:
             )
             if m:
                 return int(float(m.group(1)))
-        return ""
+        return 0
 
     def _open_log(self, seek_end):
         f = open(SVXLINK_LOGFILE, "r", encoding="utf-8", errors="replace")

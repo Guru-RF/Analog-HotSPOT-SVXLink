@@ -10,3 +10,6 @@
 *~
 *.bak
 *.orig
+
+# Vendor / firmware working dir, not part of the hotspot scripts
+SA818/

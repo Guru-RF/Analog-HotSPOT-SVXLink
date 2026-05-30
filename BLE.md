@@ -155,6 +155,8 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `rx` | 0 / 1 | local squelch open (RF carrier present) |
   | `sg` | int / 0 / null | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`). Tri-state — see below. |
   | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
+  | `mt` | string | Monitored talkgroups (`MONITOR_TGS`), raw — e.g. `8++, 23+, 50, 51, 52, 53, 54, 55`. `+` suffixes are SVXLink priority levels. |
+  | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…` |
 
   `sg` semantics, so the app can tell "no modem" apart from "modem but no signal":
 
@@ -167,14 +169,20 @@ would show, streamed as JSON. Works even on units that have no OLED.
   Example with 4G online:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
   ```
 
   Example with no 4G module installed:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
   ```
+
+  Note: `mt` and `ct` are read once from `/etc/svxlink/svxlink.conf` at
+  service start. After running `hotspot-config` to change them, restart
+  `hotspot-bluetooth` (or reboot) for the new values to appear on the
+  feed. The auto-update flow in `hotspot-config-online` already ends
+  with a reboot, so no extra step needed there.
 
   Rough buckets the app can use for a "bars" indicator:
 

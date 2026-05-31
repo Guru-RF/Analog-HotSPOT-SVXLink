@@ -31,9 +31,9 @@ say "Using serial port ${SERIAL_PORT}"
 #             or: "SA818: INFO: Firmware SA868, version: V..."
 #
 # fmchip-monitor is only needed on the original SA818 silicon at firmware
-# V1.0. The SA818PRO and SA868 chips (and any later SA818 firmware) handle
-# the failure modes the monitor was working around, so they should run
-# without it.
+# V1.0 — exact name "SA818", no suffix. The SA818PRO (any version) and the
+# SA868 generation handle the failure modes the monitor was working around,
+# so they should run without it.
 systemctl stop fmchip-monitor
 CHIPRAW=$(sa818 --port ${SERIAL_PORT} version 2>&1)
 CHIPNAME=$(echo "${CHIPRAW}" | awk '{print $4}')
@@ -45,7 +45,7 @@ NUMVER=${CHIPVERSION#V}
 VMAJOR=${NUMVER%%.*}
 VMINOR=${NUMVER#*.}
 
-if [[ "${CHIPNAME}" == SA818* && "${VMAJOR}" == "1" && "${VMINOR}" == "0" ]]; then
+if [[ "${CHIPNAME}" == "SA818" && "${VMAJOR}" == "1" && "${VMINOR}" == "0" ]]; then
   say "old CHIP ${CHIPNAME} version ${CHIPVERSION} detected enabling chip monitor"
   systemctl enable fmchip-monitor
   systemctl start fmchip-monitor

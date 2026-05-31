@@ -56,7 +56,9 @@ else
 fi
 
 echo ""
-/usr/sbin/hotspot-detect
+HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
+echo "${HOTSPOT_DETECT_OUT}"
+DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^BAND:/ {print $2}')
 
 OLDCPVOL=$(grep volume /usr/sbin/hotspot 2>/dev/null | awk '{ print $6 }' | tail -n 1)
 OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
@@ -142,10 +144,14 @@ fi
 gum style --foreground 212 "${SVXEMAIL}"
 
 gum style --foreground "#04B575" "Band:"
-# Put the previously-configured band first so re-running the config
-# doesn't make the user re-pick. VHF freqs start with 1, UHF with 4.
-# When no previous freq, fall back to UHF-first (original default).
-if [[ "${OLDFREQ}" == 1* ]]; then
+# Prefer the GPIO-detected band from hotspot-detect over OLDFREQ guessing
+# — the hat ID pins are authoritative. Fall back to OLDFREQ when the hat
+# is too old to report a band (returns UNKNOWN_BAND).
+if [[ "${DETECTED_BAND}" == "VHF" ]]; then
+  BAND=$(gum choose "2m" "70cm")
+elif [[ "${DETECTED_BAND}" == "UHF" ]]; then
+  BAND=$(gum choose "70cm" "2m")
+elif [[ "${OLDFREQ}" == 1* ]]; then
   BAND=$(gum choose "2m" "70cm")
 else
   BAND=$(gum choose "70cm" "2m")
@@ -205,23 +211,33 @@ if [[ "${CTCSSTX}" == "" ]]; then
 fi
 gum style --foreground 212 "${CTCSSTX}"
 
-gum style --foreground "#04B575" "Enter Location:"
+gum style --foreground "#04B575" "Enter Location (City, Country — defaults to Belgium if no country given):"
 if [[ "${OLDLOCATION}" == "" ]]; then
   OLDLOCATION="Saint Ghislain"
 fi
 LOCATION=$(gum input --value "${OLDLOCATION}")
 gum style --foreground 212 "${LOCATION}"
 
-# Try to prefill lat/lon/gridsquare from the entered location via
-# Nominatim (OpenStreetMap). Free, no API key, requires a User-Agent per
-# their usage policy. If anything fails (no curl, no internet, no match,
-# python3 missing) the previously-saved OLDLAT/OLDLON/OLDLOC are kept
-# and shown as the defaults for the next three prompts.
+# For the geocoding query only, append ", Belgium" when the user didn't
+# specify a country. Keeps the lookup universal (a Dutch ham can type
+# "Utrecht, Netherlands"; a French one "Lille, France") while still
+# defaulting nicely for our primary Belgian audience. LOCATION itself
+# stays as the user typed it.
+LOCATION_QUERY="${LOCATION}"
+if [[ "${LOCATION_QUERY}" != *","* ]]; then
+  LOCATION_QUERY="${LOCATION}, Belgium"
+fi
+
+# Try to prefill lat/lon/gridsquare via Nominatim (OpenStreetMap). Free,
+# no API key, requires a User-Agent per their usage policy. If anything
+# fails (no curl, no internet, no match, python3 missing) the previously-
+# saved OLDLAT/OLDLON/OLDLOC are kept and shown as the defaults for the
+# next three prompts.
 if command -v curl >/dev/null 2>&1; then
-  say "Looking up coordinates for ${LOCATION}..."
+  say "Looking up coordinates for ${LOCATION_QUERY}..."
   LOOKUP_JSON=$(curl -sG --connect-timeout 5 --max-time 10 \
     -H "User-Agent: rfguru-hotspot-config/1.0 (https://github.com/Guru-RF/Analog-HotSPOT-SVXLink)" \
-    --data-urlencode "q=${LOCATION}" \
+    --data-urlencode "q=${LOCATION_QUERY}" \
     --data "format=json&limit=1" \
     "https://nominatim.openstreetmap.org/search" 2>/dev/null || true)
   if [[ -n "${LOOKUP_JSON}" && "${LOOKUP_JSON}" != "[]" ]]; then
@@ -253,7 +269,7 @@ except Exception:
       say "Lookup returned no usable result, keeping previous coordinates"
     fi
   else
-    say "No match for '${LOCATION}', keeping previous coordinates"
+    say "No match for '${LOCATION_QUERY}', keeping previous coordinates"
   fi
 fi
 

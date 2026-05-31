@@ -142,7 +142,14 @@ fi
 gum style --foreground 212 "${SVXEMAIL}"
 
 gum style --foreground "#04B575" "Band:"
-BAND=$(gum choose "70cm" "2m")
+# Put the previously-configured band first so re-running the config
+# doesn't make the user re-pick. VHF freqs start with 1, UHF with 4.
+# When no previous freq, fall back to UHF-first (original default).
+if [[ "${OLDFREQ}" == 1* ]]; then
+  BAND=$(gum choose "2m" "70cm")
+else
+  BAND=$(gum choose "70cm" "2m")
+fi
 gum style --foreground 212 "${BAND}"
 
 gum style --foreground "#04B575" "Frequency:"

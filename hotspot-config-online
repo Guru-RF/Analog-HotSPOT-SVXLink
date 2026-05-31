@@ -212,6 +212,51 @@ fi
 LOCATION=$(gum input --value "${OLDLOCATION}")
 gum style --foreground 212 "${LOCATION}"
 
+# Try to prefill lat/lon/gridsquare from the entered location via
+# Nominatim (OpenStreetMap). Free, no API key, requires a User-Agent per
+# their usage policy. If anything fails (no curl, no internet, no match,
+# python3 missing) the previously-saved OLDLAT/OLDLON/OLDLOC are kept
+# and shown as the defaults for the next three prompts.
+if command -v curl >/dev/null 2>&1; then
+  say "Looking up coordinates for ${LOCATION}..."
+  LOOKUP_JSON=$(curl -sG --connect-timeout 5 --max-time 10 \
+    -H "User-Agent: rfguru-hotspot-config/1.0 (https://github.com/Guru-RF/Analog-HotSPOT-SVXLink)" \
+    --data-urlencode "q=${LOCATION}" \
+    --data "format=json&limit=1" \
+    "https://nominatim.openstreetmap.org/search" 2>/dev/null || true)
+  if [[ -n "${LOOKUP_JSON}" && "${LOOKUP_JSON}" != "[]" ]]; then
+    GEO=$(echo "${LOOKUP_JSON}" | python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+    if not data:
+        sys.exit(0)
+    lat = float(data[0]["lat"])
+    lon = float(data[0]["lon"])
+    al, ao = lat + 90, lon + 180
+    grid = (
+        chr(ord("A") + int(ao / 20))
+        + chr(ord("A") + int(al / 10))
+        + str(int(ao % 20 / 2))
+        + str(int(al % 10))
+        + chr(ord("a") + int((ao % 2) * 12))
+        + chr(ord("a") + int((al % 1) * 24))
+    )
+    print(f"{lat:.7f} {lon:.7f} {grid.upper()}")
+except Exception:
+    pass
+' 2>/dev/null || true)
+    if [[ -n "${GEO}" ]]; then
+      read -r OLDLAT OLDLON OLDLOC <<< "${GEO}"
+      say "Found: ${OLDLAT}, ${OLDLON} (${OLDLOC})"
+    else
+      say "Lookup returned no usable result, keeping previous coordinates"
+    fi
+  else
+    say "No match for '${LOCATION}', keeping previous coordinates"
+  fi
+fi
+
 gum style --foreground "#04B575" "Enter Latitude:"
 if [[ "${OLDLAT}" == "" ]]; then
   OLDLAT="50.4707972"

@@ -409,7 +409,9 @@ if [ $RESULT -eq 0 ]; then
     # Squelch moves from svxlink's CTCSS decoder to GPIO12, driven by the
     # PRO chip's own hardware CTCSS decoder. Comment the old keys and
     # write the GPIOD trio in their place.
-    perl -i -pe 's/^(SQL_DET=CTCSS)\s*$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
+    # NOTE: just $ (not \s*$) — \s would eat the line's trailing newline
+    # and the inserted block would run straight into the next config line.
+    perl -i -pe 's/^(SQL_DET=CTCSS)$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf

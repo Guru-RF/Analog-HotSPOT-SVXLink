@@ -272,6 +272,19 @@ Example for TG23:
 
 # CTCSS Talkgroup Mapping
 
+> **Applies to 1st–3rd generation hotspots only.** The 4th-generation
+> hotspot uses the SA818PRO chip with hardware CTCSS decoding driving
+> a single squelch GPIO — there's no per-tone talkgroup mapping in
+> svxlink anymore. Most users found this mapping confusing, and now
+> that the companion app exists there are better ways to switch:
+>
+> - **DTMF**: `91<TG>#` to activate a talkgroup, `910#` to return to TG0
+> - **Local portal** (`http://hotspot.local`): one click per talkgroup
+> - **Bluetooth companion app** (Belgian: SvxPortalApp, standalone:
+>   Analog-HotSPOT-App) — see the
+>   [Installing Bluetooth](https://github.com/Guru-RF/Analog-HotSPOT-SVXLink#installing-bluetooth-for-the-hotspot-companion-app)
+>   section.
+
 You can map talkgroups via CTCSS tones using the following format:
 
     tone:talkgroup, tone:talkgroup, …

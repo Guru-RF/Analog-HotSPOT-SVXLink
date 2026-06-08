@@ -425,7 +425,14 @@ if [ $RESULT -eq 0 ]; then
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
   echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},${CTCSSRX} --squelch 8" >> /usr/sbin/hotspot
-  echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
+  # PRO has its own emphasis stage and benefits from the chip-side
+  # filters being on; the original SA818 sounds better with svxlink/LADSPA
+  # doing the shaping, so leave its filters disabled.
+  if [[ "${IS_PRO}" == "1" ]]; then
+    echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
+  else
+    echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
+  fi
   echo "sa818 --port ${SERIAL_PORT} volume --level ${CPVOL}" >> /usr/sbin/hotspot
   chmod +x /usr/sbin/hotspot
 
@@ -503,10 +510,18 @@ EOF
   run "wget -O /usr/sbin/hotspot-frequency https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-frequency > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-frequency"
 
-  # hotspot-talkgroups is deprecated — talkgroup config now lives in
-  # svxlink.conf (MONITOR_TGS) and is set via hotspot-config / the BLE
-  # feed; remove any stale copy from prior installs.
-  rm -f /usr/sbin/hotspot-talkgroups
+  # hotspot-talkgroups only makes sense on 1st–3rd gen hotspots (original
+  # SA818): it edits the per-tone CTCSS-to-TG mapping in svxlink.conf,
+  # which the PRO chip's GPIO-squelch path doesn't use. Refresh it on
+  # non-PRO hardware; rm any stale copy on PRO so people don't run it
+  # and get confused.
+  if [[ "${IS_PRO}" == "1" ]]; then
+    rm -f /usr/sbin/hotspot-talkgroups
+  else
+    say "Downloading hotspot-talkgroups"
+    run "wget -O /usr/sbin/hotspot-talkgroups https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-talkgroups > /dev/null 2>&1"
+    run "chmod +x /usr/sbin/hotspot-talkgroups"
+  fi
 
   say "Downloading install-4gmodule"
   run "wget -O /usr/sbin/install-4gmodule https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-4gmodule > /dev/null 2>&1"
@@ -527,6 +542,9 @@ EOF
   say ""
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
+  if [[ "${IS_PRO}" != "1" ]]; then
+    say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups"
+  fi
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
   say "run [>sudo /usr/sbin/install-4gmodule] to install 4g support if you have a hotspot-4g"
   say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and have the companion app on your computer (https://github.com/Guru-RF/Analog-HotSPOT-App/releases)"

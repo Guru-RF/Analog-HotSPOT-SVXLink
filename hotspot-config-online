@@ -344,8 +344,8 @@ AFVOL=77
 gum style --foreground 212 "${AFVOL}"
 
 if [[ "${IS_PRO}" == "1" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 77 for SA818PRO):"
-  RFVOL=77
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for SA818PRO):"
+  RFVOL=65
 else
   gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
   RFVOL=0

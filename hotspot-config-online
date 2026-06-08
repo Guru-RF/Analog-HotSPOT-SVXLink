@@ -55,6 +55,14 @@ else
   systemctl disable fmchip-monitor
 fi
 
+# Flag PRO variant — drives a few PRO-only choices below (squelch via GPIO
+# instead of svxlink CTCSS decode, no per-tone TG mapping, different RF
+# input default, etc.).
+IS_PRO=0
+if [[ "${CHIPNAME}" == *PRO* ]]; then
+  IS_PRO=1
+fi
+
 echo ""
 HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
 echo "${HOTSPOT_DETECT_OUT}"
@@ -69,6 +77,15 @@ OLDFREQ=$(grep freq /usr/sbin/hotspot 2>/dev/null | head -n1 | awk '{ print $8 }
 OLDCTCSS=$(
   sed -n \
     's/.*--ctcss[[:space:]]*\([0-9.]\+\),.*/\1/p' \
+    /usr/sbin/hotspot \
+  | head -n1
+)
+
+# Read old CTCSS *RX* tone (the value after the comma in --ctcss TX,RX —
+# always 0 on non-PRO chips, may be a real tone on SA818PRO).
+OLDCTCSSRX=$(
+  sed -n \
+    's/.*--ctcss[[:space:]]*[0-9.]\+,\([0-9.]\+\).*/\1/p' \
     /usr/sbin/hotspot \
   | head -n1
 )
@@ -190,15 +207,36 @@ if [ "${BAND}" = "2m" ]; then
   fi
 fi
 
-gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,85.4:9000,88.5:8401):"
-if [[ "${OLDCTCSSMAPPING}" == "--CTCSSMAPPING--" ]]; then
-  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
+if [[ "${IS_PRO}" == "1" ]]; then
+  # SA818PRO: chip handles CTCSS in hardware and asserts GPIO12 only when
+  # the configured RX tone is present. svxlink reads that GPIO as squelch
+  # (SQL_DET=GPIOD below), so we ask for one RX tone instead of a per-tone
+  # talkgroup mapping.
+  gum style --foreground "#04B575" "Enter RX CTCSS tone (default 88.5) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5):"
+  if [[ "${OLDCTCSSRX}" == "" || "${OLDCTCSSRX}" == "0" ]]; then
+    OLDCTCSSRX="88.5"
+  fi
+  CTCSSRX=$(gum input --value "${OLDCTCSSRX}")
+  if [[ "${CTCSSRX}" == "" ]]; then
+    CTCSSRX="${OLDCTCSSRX}"
+  fi
+  gum style --foreground 212 "${CTCSSRX}"
+  # No per-tone TG mapping on PRO — svxlink isn't doing CTCSS decode, so
+  # CTCSS_TO_TG would never fire. Leave the placeholders empty.
+  CTCSSMAPPING=""
+  CTCSSLIST=""
+else
+  gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,85.4:9000,88.5:8401):"
+  if [[ "${OLDCTCSSMAPPING}" == "--CTCSSMAPPING--" ]]; then
+    OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
+  fi
+  if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
+    OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
+  fi
+  CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
+  gum style --foreground 212 "${CTCSSMAPPING}"
+  CTCSSRX=0
 fi
-if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
-  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
-fi
-CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
-gum style --foreground 212 "${CTCSSMAPPING}"
 
 # Always ask for CTCSS TX tone (from Tx1 CTCSS_FQ)
 gum style --foreground "#04B575" "Enter CTCSS TX tone (default 67) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5):"
@@ -305,8 +343,13 @@ gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
 AFVOL=77
 gum style --foreground 212 "${AFVOL}"
 
-gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
-RFVOL=0
+if [[ "${IS_PRO}" == "1" ]]; then
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 77 for SA818PRO):"
+  RFVOL=77
+else
+  gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
+  RFVOL=0
+fi
 gum style --foreground 212 "${RFVOL}"
 
 if [[ "${OLDCPVOL}" == "" ]]; then
@@ -361,13 +404,28 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--LOC--/${LOC}/g" /etc/svxlink/node_info.json
   perl -i -pe "s/--HIDDEN--/false/g" /etc/svxlink/node_info.json
 
+  if [[ "${IS_PRO}" == "1" ]]; then
+    say "Applying SA818PRO-specific overrides to svxlink.conf"
+    # Squelch moves from svxlink's CTCSS decoder to GPIO12, driven by the
+    # PRO chip's own hardware CTCSS decoder. Comment the old keys and
+    # write the GPIOD trio in their place.
+    perl -i -pe 's/^(SQL_DET=CTCSS)\s*$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
+    perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
+    perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
+    perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf
+    # PRO chip handles emphasis itself — turn svxlink's de/pre-emphasis
+    # off so the audio isn't shaped twice.
+    perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/' /etc/svxlink/svxlink.conf
+    perl -i -pe 's/^PREEMPHASIS=.*$/PREEMPHASIS=0/' /etc/svxlink/svxlink.conf
+  fi
+
   rm -f /usr/sbin/hotspot
 
   say "Configuring hotspot"
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
-  echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},0 --squelch 8" >> /usr/sbin/hotspot
-  echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
+  echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},${CTCSSRX} --squelch 8" >> /usr/sbin/hotspot
+  echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
   echo "sa818 --port ${SERIAL_PORT} volume --level ${CPVOL}" >> /usr/sbin/hotspot
   chmod +x /usr/sbin/hotspot
 
@@ -445,10 +503,11 @@ EOF
   run "wget -O /usr/sbin/hotspot-frequency https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-frequency > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-frequency"
 
-  say "Downloading hotspot-talkgroups"
-  run "wget -O /usr/sbin/hotspot-talkgroups https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-talkgroups > /dev/null 2>&1"
-  run "chmod +x /usr/sbin/hotspot-talkgroups"
-  
+  # hotspot-talkgroups is deprecated — talkgroup config now lives in
+  # svxlink.conf (MONITOR_TGS) and is set via hotspot-config / the BLE
+  # feed; remove any stale copy from prior installs.
+  rm -f /usr/sbin/hotspot-talkgroups
+
   say "Downloading install-4gmodule"
   run "wget -O /usr/sbin/install-4gmodule https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-4gmodule > /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-4gmodule"
@@ -468,7 +527,6 @@ EOF
   say ""
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
-  say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups"
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
   say "run [>sudo /usr/sbin/install-4gmodule] to install 4g support if you have a hotspot-4g"
   say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and have the companion app on your computer (https://github.com/Guru-RF/Analog-HotSPOT-App/releases)"

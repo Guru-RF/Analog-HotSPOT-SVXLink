@@ -179,7 +179,6 @@ https://www.youtube.com/watch?v=bKF9JRo0ORM
 - `D911#` — Speaks IP address over RF  
 - `hotspot-frequency` — Quick frequency setup  
 - `hotspot-options` — Thermal + announcements  
-- `hotspot-talkgroups` — Talkgroup/CTCSS mapping  
 - `hotspot-volume` — Audio control
 
 ---

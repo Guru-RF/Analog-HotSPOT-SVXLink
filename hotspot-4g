@@ -144,4 +144,11 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
 done
 
 log "giving up after $MAX_ATTEMPTS attempts"
+# Make sure wlan0 is back UP before we exit — otherwise the user is
+# locked out (no 4G, no Wi-Fi). Idempotent: no-op if already up.
+if ip link show wlan0 >/dev/null 2>&1; then
+  log "bringing wlan0 back UP so the box stays reachable"
+  ip link set wlan0 up 2>/dev/null || true
+  systemctl try-restart accesspopup.service 2>/dev/null || true
+fi
 exit 1

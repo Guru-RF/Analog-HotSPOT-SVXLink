@@ -17,6 +17,31 @@ MONITOR_PING_TIMEOUT=5
 
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
+# Bring wlan0 back up when 4G has failed, so the user keeps an access
+# path (AccessPopup AP / known Wi-Fi) instead of being locked out. Tries
+# to also kick AccessPopup if it's installed, so it re-applies its AP /
+# scan logic against the freshly-up interface.
+bring_wlan_up() {
+  if ip link show wlan0 >/dev/null 2>&1; then
+    if ip -o link show wlan0 | grep -q ' state DOWN '; then
+      log "bringing wlan0 back UP (4G access gone, restoring fallback)"
+      ip link set wlan0 up 2>/dev/null || log "ip link set wlan0 up failed"
+      systemctl try-restart accesspopup.service 2>/dev/null || true
+    fi
+  fi
+}
+
+# Take wlan0 back down once 4G is healthy again (we previously brought it
+# up to give the user a fallback during an outage).
+bring_wlan_down() {
+  if ip link show wlan0 >/dev/null 2>&1; then
+    if ip -o link show wlan0 | grep -q ' state UP '; then
+      log "bringing wlan0 back DOWN (4G recovered)"
+      ip link set wlan0 down 2>/dev/null || log "ip link set wlan0 down failed"
+    fi
+  fi
+}
+
 probe() {
   for t in $MONITOR_TARGETS; do
     if ping -I "$IFACE" -c 1 -W "$MONITOR_PING_TIMEOUT" -q "$t" >/dev/null 2>&1; then
@@ -38,6 +63,11 @@ probe() {
 
 restart_link() {
   log "link stale — restarting hotspot-4g.service"
+  # Bring wlan0 up BEFORE the restart so the user has a fallback path
+  # while hotspot-4g (which can take 10+ minutes when failing) chews on
+  # its retry loop. If 4G comes back, the next successful probe will
+  # take wlan0 down again.
+  bring_wlan_up
   systemctl restart hotspot-4g.service || log "systemctl restart failed"
   sleep "$MONITOR_GRACE"
 }
@@ -61,6 +91,9 @@ while true; do
   if probe; then
     if (( fails > 0 )); then
       log "link recovered after $fails failed probe(s)"
+      # If we brought wlan0 up during the outage, restore the
+      # "4G-only" state now that the link is back.
+      bring_wlan_down
     fi
     fails=0
   else

@@ -13,8 +13,17 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
-OLDCTCSSMAPPING=$(cat /etc/svxlink/svxlink.conf | grep CTCSS_TO_TG | head -n 1 | tr "=" "\n" | tail -n 1)
-OLDTGS=$(cat /etc/svxlink/svxlink.conf | grep MONITOR_TGS | head -n 1 | tr "=" "\n" | tail -n 1)
+# Detect whether this box is configured for the SA818PRO audio chain by
+# looking for the GPIOD squelch line hotspot-config-online writes for PRO
+# chips. PRO has no software CTCSS decode → no per-tone TG mapping; we
+# only ask for the monitored TGs and use the first of them as DEFAULT_TG.
+IS_PRO_CHIP=0
+if grep -qE '^SQL_DET=GPIOD' /etc/svxlink/svxlink.conf 2>/dev/null; then
+  IS_PRO_CHIP=1
+fi
+
+OLDCTCSSMAPPING=$(grep '^CTCSS_TO_TG=' /etc/svxlink/svxlink.conf 2>/dev/null | head -n 1 | tr "=" "\n" | tail -n 1)
+OLDTGS=$(grep '^MONITOR_TGS=' /etc/svxlink/svxlink.conf 2>/dev/null | head -n 1 | tr "=" "\n" | tail -n 1)
 CALL=$(cat /etc/svxlink/svxlink.conf | grep CALL | head -n 1 | tr "=" "\n" | tail -n 1)
 QSYTIMEOUT=$(cat /etc/svxlink/svxlink.conf | grep QSY_PENDING_TIMEOUT | head -n 1 | tr "=" "\n" | tail -n 1)
 
@@ -37,12 +46,20 @@ fi
 
 gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Talkgroups"
 
-gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4):"
-if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
-  OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
+if [[ "${IS_PRO_CHIP}" == "1" ]]; then
+  # PRO: chip does CTCSS decode in hardware → no per-tone TG mapping in
+  # svxlink. Only the monitored-TG list matters; the first entry will
+  # become DEFAULT_TG so the box boots straight onto the user's main TG.
+  say "SA818PRO detected — no per-tone CTCSS mapping (chip handles tone detection). Configuring monitored talkgroups only; the first one becomes the default TG."
+  CTCSSMAPPING=""
+else
+  gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4):"
+  if [[ "${OLDCTCSSMAPPING}" == "" ]]; then
+    OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
+  fi
+  CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
+  gum style --foreground 212 "${CTCSSMAPPING}"
 fi
-CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
-gum style --foreground 212 "${CTCSSMAPPING}"
 
 gum style --foreground "#04B575" "Enter talk groups to monitor:"
 if [[ "${OLDTGS}" == "" ]]; then
@@ -69,5 +86,27 @@ perl -i -pe "s/--TGS--/${TGS}/g" /etc/svxlink/svxlink.conf
 perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/node_info.json
 perl -i -pe "s/--SVXCALL--/${OLDSVXCALL}/g" /etc/svxlink/svxlink.conf
 perl -i -pe "s/--SVXEMAIL--/$(printf '%s' "$OLDSVXEMAIL" | sed 's/@/\\@/g')/g" /etc/svxlink/svxlink.conf
+
+# Re-apply the PRO-specific overrides — we just cp'd the generic template
+# which always has SQL_DET=CTCSS / DEEMPHASIS=1 / PREEMPHASIS=1, and on a
+# PRO box those would re-break squelch and double the emphasis. Same
+# substitutions as hotspot-config-online's PRO branch, kept in sync.
+if [[ "${IS_PRO_CHIP}" == "1" ]]; then
+  perl -i -pe 's/^(SQL_DET=CTCSS)$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
+  perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
+  perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
+  perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf
+  perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/' /etc/svxlink/svxlink.conf
+  perl -i -pe 's/^PREEMPHASIS=.*$/PREEMPHASIS=0/' /etc/svxlink/svxlink.conf
+
+  # DEFAULT_TG = first numeric entry in the monitored-TG list. sed (not
+  # tr -d) on the per-line strip so newlines aren't collapsed.
+  FIRST_TG=$(echo "${TGS}" | tr ',' '\n' | sed 's/[+[:space:]]//g' | grep -E '^[0-9]+$' | head -n1)
+  if [[ -n "${FIRST_TG}" ]]; then
+    say "Setting DEFAULT_TG=${FIRST_TG} (first monitored TG)"
+    perl -i -pe "s/^DEFAULT_TG=.*\$/DEFAULT_TG=${FIRST_TG}/" /etc/svxlink/svxlink.conf
+  fi
+fi
+
 run "systemctl restart svxlink"
 run "systemctl restart fmchip-monitor"

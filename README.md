@@ -179,6 +179,7 @@ https://www.youtube.com/watch?v=bKF9JRo0ORM
 - `D911#` — Speaks IP address over RF  
 - `hotspot-frequency` — Quick frequency setup  
 - `hotspot-options` — Thermal + announcements  
+- `hotspot-talkgroups` — Monitored TGs (and CTCSS-to-TG mapping on non-PRO chips); on PRO chips the first monitored TG becomes the default TG  
 - `hotspot-volume` — Audio control
 
 ---

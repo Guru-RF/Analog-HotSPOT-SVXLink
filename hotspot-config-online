@@ -524,6 +524,20 @@ if [ $RESULT -eq 0 ]; then
     # off so the audio isn't shaped twice.
     perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/' /etc/svxlink/svxlink.conf
     perl -i -pe 's/^PREEMPHASIS=.*$/PREEMPHASIS=0/' /etc/svxlink/svxlink.conf
+
+    # Default talkgroup: PRO has no per-tone CTCSS mapping, so users
+    # switch via DTMF. Sitting on TG0 by default means they have to dial
+    # in every time. Make DEFAULT_TG the first entry in their MONITOR_TGS
+    # list (stripping "+" priority markers and whitespace), so the box
+    # comes up already on the user's primary TG.
+    # NB: sed (not tr -d) on the per-line strip — tr's [:space:] eats the
+    # newlines we just inserted with tr ',' '\n' and collapses everything
+    # into one giant fake TG number.
+    FIRST_TG=$(echo "${TGS}" | tr ',' '\n' | sed 's/[+[:space:]]//g' | grep -E '^[0-9]+$' | head -n1)
+    if [[ -n "${FIRST_TG}" ]]; then
+      say "Setting DEFAULT_TG=${FIRST_TG} (first monitored TG) — PRO chip uses DTMF switching, no per-tone CTCSS mapping"
+      perl -i -pe "s/^DEFAULT_TG=.*\$/DEFAULT_TG=${FIRST_TG}/" /etc/svxlink/svxlink.conf
+    fi
   fi
 
   rm -f /usr/sbin/hotspot

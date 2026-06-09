@@ -272,11 +272,19 @@ Example for TG23:
 
 # CTCSS Talkgroup Mapping
 
-> **Applies to 1st–3rd generation hotspots only.** The 4th-generation
-> hotspot uses the SA818PRO chip with hardware CTCSS decoding driving
-> a single squelch GPIO — there's no per-tone talkgroup mapping in
-> svxlink anymore. Most users found this mapping confusing, and now
-> that the companion app exists there are better ways to switch:
+> **Applies to every chip *except* the SA818PRO.** The CTCSS-to-talkgroup
+> mapping is a **software-CTCSS** feature implemented inside SVXLink —
+> svxlink listens to the audio, decodes the tone, and switches
+> talkgroups. Any radio module that hands raw audio to the Pi falls into
+> this category: the original SA818, the SA818S-CE, the SA868, etc. —
+> regardless of which board generation they're soldered onto. A 4th-gen
+> board can ship with an SA818S-CE chip, in which case it uses this
+> software-CTCSS mapping just like a 1st-gen board does.
+>
+> Only the **SA818PRO** is different: it has *hardware* CTCSS decoding
+> on-chip and drives a single squelch GPIO line, so svxlink doesn't
+> decode anything itself and there's no per-tone mapping. On a PRO
+> hotspot, talkgroup switching uses one of:
 >
 > - **DTMF**: `91<TG>#` to activate a talkgroup, `910#` to return to TG0
 > - **Local portal** (`http://hotspot.local`): one click per talkgroup
@@ -284,6 +292,10 @@ Example for TG23:
 >   Analog-HotSPOT-App) — see the
 >   [Installing Bluetooth](https://github.com/Guru-RF/Analog-HotSPOT-SVXLink#installing-bluetooth-for-the-hotspot-companion-app)
 >   section.
+>
+> Many users on software-CTCSS boards also prefer DTMF / portal / BLE
+> over the per-tone mapping because the mapping is easy to forget — the
+> options above work everywhere.
 
 You can map talkgroups via CTCSS tones using the following format:
 

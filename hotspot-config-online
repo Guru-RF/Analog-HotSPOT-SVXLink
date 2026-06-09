@@ -319,7 +319,7 @@ if [[ "${CTCSSTX}" == "" ]]; then
 fi
 gum style --foreground 212 "${CTCSSTX}"
 
-gum style --foreground "#04B575" "Enter Location (City, Country — defaults to Belgium if no country given):"
+gum style --foreground "#04B575" "Enter Location — a full street address gives accurate coordinates; only the city is saved to the public node info (defaults to Belgium if no country):"
 if [[ "${OLDLOCATION}" == "" ]]; then
   OLDLOCATION="Saint Ghislain"
 fi
@@ -329,34 +329,43 @@ gum style --foreground 212 "${LOCATION}"
 # For the geocoding query only, append ", Belgium" when the user didn't
 # specify a country. Keeps the lookup universal (a Dutch ham can type
 # "Utrecht, Netherlands"; a French one "Lille, France") while still
-# defaulting nicely for our primary Belgian audience. LOCATION itself
-# stays as the user typed it.
+# defaulting nicely for our primary Belgian audience.
 LOCATION_QUERY="${LOCATION}"
 if [[ "${LOCATION_QUERY}" != *","* ]]; then
   LOCATION_QUERY="${LOCATION}, Belgium"
 fi
 
 # Try to prefill lat/lon/gridsquare via Nominatim (OpenStreetMap). Free,
-# no API key, requires a User-Agent per their usage policy. If anything
-# fails (no curl, no internet, no match, python3 missing) the previously-
-# saved OLDLAT/OLDLON/OLDLOC are kept and shown as the defaults for the
-# next three prompts.
+# no API key, requires a User-Agent per their usage policy.
+#
+# Privacy: the user is invited to type a full street address for accurate
+# coordinates, but the value we keep in LOCATION (which ends up in
+# node_info.json and from there on the dashboard / reflector / APRS) is
+# replaced with just the city/town extracted from the lookup. We add
+# addressdetails=1 to get those structured fields back.
+#
+# If anything fails (no curl, no internet, no match, python3 missing) the
+# previously-saved OLDLAT/OLDLON/OLDLOC are kept and LOCATION stays as
+# the user typed it.
 if command -v curl >/dev/null 2>&1; then
   say "Looking up coordinates for ${LOCATION_QUERY}..."
   LOOKUP_JSON=$(curl -sG --connect-timeout 5 --max-time 10 \
     -H "User-Agent: rfguru-hotspot-config/1.0 (https://github.com/Guru-RF/Analog-HotSPOT-SVXLink)" \
     --data-urlencode "q=${LOCATION_QUERY}" \
-    --data "format=json&limit=1" \
+    --data "format=json&limit=1&addressdetails=1" \
     "https://nominatim.openstreetmap.org/search" 2>/dev/null || true)
   if [[ -n "${LOOKUP_JSON}" && "${LOOKUP_JSON}" != "[]" ]]; then
+    # Output is tab-separated so multi-word city names ("Saint Ghislain")
+    # survive `read`. Python emits exactly four fields.
     GEO=$(echo "${LOOKUP_JSON}" | python3 -c '
 import json, sys
 try:
     data = json.loads(sys.stdin.read())
     if not data:
         sys.exit(0)
-    lat = float(data[0]["lat"])
-    lon = float(data[0]["lon"])
+    entry = data[0]
+    lat = float(entry["lat"])
+    lon = float(entry["lon"])
     al, ao = lat + 90, lon + 180
     grid = (
         chr(ord("A") + int(ao / 20))
@@ -366,13 +375,24 @@ try:
         + chr(ord("a") + int((ao % 2) * 12))
         + chr(ord("a") + int((al % 1) * 24))
     )
-    print(f"{lat:.7f} {lon:.7f} {grid.upper()}")
+    addr = entry.get("address") or {}
+    city = (
+        addr.get("city") or addr.get("town") or addr.get("village")
+        or addr.get("hamlet") or addr.get("municipality")
+        or addr.get("county") or ""
+    )
+    print(f"{lat:.7f}\t{lon:.7f}\t{grid.upper()}\t{city}")
 except Exception:
     pass
 ' 2>/dev/null || true)
     if [[ -n "${GEO}" ]]; then
-      read -r OLDLAT OLDLON OLDLOC <<< "${GEO}"
-      say "Found: ${OLDLAT}, ${OLDLON} (${OLDLOC})"
+      IFS=$'\t' read -r OLDLAT OLDLON OLDLOC LOOKUP_CITY <<< "${GEO}"
+      if [[ -n "${LOOKUP_CITY}" ]]; then
+        say "Found: ${OLDLAT}, ${OLDLON} (${OLDLOC}) — saving location as '${LOOKUP_CITY}' (no street address stored)"
+        LOCATION="${LOOKUP_CITY}"
+      else
+        say "Found: ${OLDLAT}, ${OLDLON} (${OLDLOC}) — no city field in result, keeping '${LOCATION}' as entered"
+      fi
     else
       say "Lookup returned no usable result, keeping previous coordinates"
     fi

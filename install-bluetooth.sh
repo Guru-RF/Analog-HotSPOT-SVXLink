@@ -12,6 +12,72 @@ say () {
 }
 
 RAW="https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master"
+INSTALLER_NAME="sudo /usr/sbin/install-bluetooth"
+
+# Refuse to install on a not-fully-updated OR not-yet-rebooted OS — a
+# kernel/libc upgrade left half-applied would put userspace and modules
+# out of sync, and the BlueZ stack in particular often needs the
+# post-upgrade reboot to enumerate the controller cleanly.
+ensure_os_ready() {
+  say "Checking for pending OS updates"
+  if ! apt-get update -qq 2>/dev/null; then
+    say "WARNING: apt update failed (offline?) — checking against the cached package list"
+  fi
+
+  PENDING=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
+  if [[ "${PENDING}" -gt 0 ]]; then
+    say ""
+    say "STOP — there are ${PENDING} pending package upgrade(s)."
+    say "Please run, in order:"
+    say ""
+    say "    sudo apt -y update && sudo apt -y upgrade"
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    say ""
+    say "First 10 pending packages:"
+    apt-get -s upgrade 2>/dev/null | grep '^Inst ' | head -10 | sed 's/^Inst /  - /'
+    if [[ "${PENDING}" -gt 10 ]]; then
+      say "  ... and $((PENDING - 10)) more"
+    fi
+    exit 1
+  fi
+
+  if [[ -f /var/run/reboot-required ]]; then
+    say ""
+    say "STOP — the system applied updates that require a reboot first."
+    say "(/var/run/reboot-required is present)"
+    say ""
+    say "Please run:"
+    say ""
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    exit 1
+  fi
+
+  RUNNING_KERNEL=$(uname -r)
+  LATEST_KERNEL=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
+                  | grep -E '^linux-image-[0-9]' \
+                  | sed 's/^linux-image-//' \
+                  | sort -V | tail -n1)
+  if [[ -n "${LATEST_KERNEL}" && "${LATEST_KERNEL}" != "${RUNNING_KERNEL}" ]]; then
+    say ""
+    say "STOP — running kernel (${RUNNING_KERNEL}) is older than the installed kernel (${LATEST_KERNEL})."
+    say "A reboot is needed before installing."
+    say ""
+    say "Please run:"
+    say ""
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    exit 1
+  fi
+
+  say "OS is up to date and current kernel is running"
+}
+
+ensure_os_ready
 
 say "Installing Bluetooth prerequisites"
 run "apt install -y bluez python3-dbus python3-gi wget rfkill"

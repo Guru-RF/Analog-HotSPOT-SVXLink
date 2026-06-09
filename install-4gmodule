@@ -11,10 +11,77 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
+INSTALLER_NAME="sudo /usr/sbin/install-4gmodule"
+
+# Refuse to install on a not-fully-updated OR not-yet-rebooted OS — a
+# kernel/libc upgrade left half-applied would put userspace and modules
+# out of sync, and modem drivers often need the post-upgrade reboot to
+# work properly.
+ensure_os_ready() {
+  say "Checking for pending OS updates"
+  if ! apt-get update -qq 2>/dev/null; then
+    say "WARNING: apt update failed (offline?) — checking against the cached package list"
+  fi
+
+  # 1) Pending package upgrades?
+  PENDING=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
+  if [[ "${PENDING}" -gt 0 ]]; then
+    say ""
+    say "STOP — there are ${PENDING} pending package upgrade(s)."
+    say "Please run, in order:"
+    say ""
+    say "    sudo apt -y update && sudo apt -y upgrade"
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    say ""
+    say "First 10 pending packages:"
+    apt-get -s upgrade 2>/dev/null | grep '^Inst ' | head -10 | sed 's/^Inst /  - /'
+    if [[ "${PENDING}" -gt 10 ]]; then
+      say "  ... and $((PENDING - 10)) more"
+    fi
+    exit 1
+  fi
+
+  # 2) Pending reboot signal from update-notifier-common / unattended-upgrades?
+  if [[ -f /var/run/reboot-required ]]; then
+    say ""
+    say "STOP — the system applied updates that require a reboot first."
+    say "(/var/run/reboot-required is present)"
+    say ""
+    say "Please run:"
+    say ""
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    exit 1
+  fi
+
+  # 3) Installed kernel newer than the one currently running?
+  RUNNING_KERNEL=$(uname -r)
+  LATEST_KERNEL=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
+                  | grep -E '^linux-image-[0-9]' \
+                  | sed 's/^linux-image-//' \
+                  | sort -V | tail -n1)
+  if [[ -n "${LATEST_KERNEL}" && "${LATEST_KERNEL}" != "${RUNNING_KERNEL}" ]]; then
+    say ""
+    say "STOP — running kernel (${RUNNING_KERNEL}) is older than the installed kernel (${LATEST_KERNEL})."
+    say "A reboot is needed before installing."
+    say ""
+    say "Please run:"
+    say ""
+    say "    sudo reboot"
+    say ""
+    say "and then re-run:  ${INSTALLER_NAME}"
+    exit 1
+  fi
+
+  say "OS is up to date and current kernel is running"
+}
+
+ensure_os_ready
 
 say "Installing Prerequisites"
-run "apt -y update"
-run "apt -y upgrade"
 run "apt -y install libqmi-utils udhcpc"
 
 

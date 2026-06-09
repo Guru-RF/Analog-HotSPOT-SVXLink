@@ -25,6 +25,18 @@ else
 fi
 say "Using serial port ${SERIAL_PORT}"
 
+# Detect the board (GPIO straps) BEFORE the chip — the board generation is
+# authoritative for the audio path and is independent of whatever the
+# SA818 says about itself over serial. The chip-detect call comes next
+# and may take a second or two to talk to the radio.
+echo ""
+HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
+echo "${HOTSPOT_DETECT_OUT}"
+DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}"       | awk -F': ' '/^BAND:/ {print $2}')
+DETECTED_GENERATION=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^GENERATION:/ {print $2}')
+DETECTED_POWER=$(echo "${HOTSPOT_DETECT_OUT}"      | awk -F': ' '/^POWER:/ {print $2}')
+echo ""
+
 # Detect chip variant + firmware version and enable/disable monitor accordingly.
 # Example output: "SA818: INFO: Firmware SA818, version: V1.0"
 #             or: "SA818: INFO: Firmware SA818PRO, version: V1.1"
@@ -54,13 +66,6 @@ else
   systemctl stop fmchip-monitor
   systemctl disable fmchip-monitor
 fi
-
-echo ""
-HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
-echo "${HOTSPOT_DETECT_OUT}"
-DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}"       | awk -F': ' '/^BAND:/ {print $2}')
-DETECTED_GENERATION=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^GENERATION:/ {print $2}')
-DETECTED_POWER=$(echo "${HOTSPOT_DETECT_OUT}"      | awk -F': ' '/^POWER:/ {print $2}')
 
 # Two independent capability flags — must NOT be conflated:
 #
@@ -182,6 +187,21 @@ if [[ "${SVXEMAIL}" == "" ]]; then
   SVXEMAIL=${OLDSVXEMAIL}
 fi
 gum style --foreground 212 "${SVXEMAIL}"
+
+# Hostname — defaults to the reflector user callsign so the box advertises
+# itself on the LAN as ${SVXCALL}.local once mDNS picks it up. Reuse the
+# current system hostname as the in-place default if the user has already
+# customised it, so re-running config doesn't quietly reset it.
+OLDHOSTNAME=$(hostname 2>/dev/null)
+if [[ -z "${OLDHOSTNAME}" || "${OLDHOSTNAME}" == "hotspot" || "${OLDHOSTNAME}" == "raspberrypi" ]]; then
+  OLDHOSTNAME="${SVXCALL}"
+fi
+gum style --foreground "#04B575" "Hostname (default: ${SVXCALL}):"
+NEW_HOSTNAME=$(gum input --value "${OLDHOSTNAME}")
+if [[ -z "${NEW_HOSTNAME}" ]]; then
+  NEW_HOSTNAME="${OLDHOSTNAME}"
+fi
+gum style --foreground 212 "${NEW_HOSTNAME}"
 
 gum style --foreground "#04B575" "Band:"
 # Prefer the GPIO-detected band from hotspot-detect over OLDFREQ guessing
@@ -427,6 +447,18 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--LOC--/${LOC}/g" /etc/svxlink/node_info.json
   perl -i -pe "s/--HIDDEN--/false/g" /etc/svxlink/node_info.json
 
+  if [[ "${NEW_HOSTNAME}" != "$(hostname)" ]]; then
+    say "Setting hostname to ${NEW_HOSTNAME}"
+    run "hostnamectl set-hostname ${NEW_HOSTNAME}"
+    # /etc/hosts: keep 127.0.1.1 mapped to the new name so sudo/sshd
+    # don't pause on hostname resolution.
+    if grep -qE '^127\.0\.1\.1' /etc/hosts; then
+      run "sed -i -E 's|^(127\\.0\\.1\\.1)\\s+.*|\\1\\t${NEW_HOSTNAME}|' /etc/hosts"
+    else
+      run "printf '127.0.1.1\\t%s\\n' '${NEW_HOSTNAME}' >> /etc/hosts"
+    fi
+  fi
+
   if [[ "${IS_PRO_CHIP}" == "1" ]]; then
     say "Applying SA818PRO-specific overrides to svxlink.conf"
     # Squelch moves from svxlink's CTCSS decoder to GPIO12, driven by the
@@ -577,6 +609,10 @@ EOF
   say ""
   say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
   say ""
+  if [[ "${NEW_HOSTNAME}" != "hotspot" ]]; then
+    say "After reboot the device advertises as http://${NEW_HOSTNAME}.local (not hotspot.local anymore)"
+    say ""
+  fi
   say "please reboot your system with:"
   say "run [>sudo reboot]"
 

@@ -122,20 +122,39 @@ ensure_os_ready() {
 
 ensure_os_ready
 
+# Before touching apt / services: if the onboard BT chip is disabled in
+# config.txt, remove the overlay and bail. The device-tree change only
+# takes effect at boot, so any service-restart we'd do further down would
+# fail because /sys/class/bluetooth/hci0 wouldn't exist yet — leaving the
+# user thinking the installer succeeded when it actually couldn't.
+DISABLE_BT_REMOVED=0
+for cfg in /boot/firmware/config.txt /boot/config.txt; do
+  if [[ -f "$cfg" ]] && grep -qE '^[[:space:]]*dtoverlay=disable-bt[[:space:]]*$' "$cfg"; then
+    say "Removing dtoverlay=disable-bt from $cfg (onboard BT was disabled)"
+    run "sed -i -E '/^[[:space:]]*dtoverlay=disable-bt[[:space:]]*\$/d' $cfg"
+    DISABLE_BT_REMOVED=1
+  fi
+done
+
+if [[ "${DISABLE_BT_REMOVED}" = "1" ]]; then
+  say ""
+  say "STOP — onboard Bluetooth was disabled in config.txt and has just been re-enabled."
+  say "The kernel won't see the BT chip until the next boot. Please run:"
+  say ""
+  say "    sudo reboot"
+  say ""
+  say "and then re-run:  ${INSTALLER_NAME}"
+  say ""
+  say "Nothing else has been changed on this run — packages, BlueZ tuning,"
+  say "and hotspot-bluetooth will all be installed on the post-reboot run."
+  exit 0
+fi
+
 say "Installing Bluetooth prerequisites"
 run "apt install -y bluez python3-dbus python3-gi wget rfkill"
 
 say "Unblocking bluetooth (rfkill)"
 run "rfkill unblock bluetooth"
-
-REBOOT_NEEDED=0
-say "Ensuring onboard Bluetooth is enabled (removing dtoverlay=disable-bt)"
-for cfg in /boot/firmware/config.txt /boot/config.txt; do
-  if [[ -f "$cfg" ]] && grep -qE '^[[:space:]]*dtoverlay=disable-bt[[:space:]]*$' "$cfg"; then
-    run "sed -i -E '/^[[:space:]]*dtoverlay=disable-bt[[:space:]]*\$/d' $cfg"
-    REBOOT_NEEDED=1
-  fi
-done
 
 say "Tuning /etc/bluetooth/main.conf for stable BLE on the combo chip"
 if [[ -f /etc/bluetooth/main.conf ]]; then
@@ -181,4 +200,3 @@ run "systemctl enable hotspot-bluetooth"
 run "systemctl restart hotspot-bluetooth"
 
 say "Done. Advertising as $(hostname)"
-[[ "$REBOOT_NEEDED" = "1" ]] && say "Reboot required: dtoverlay=disable-bt was removed from config.txt"

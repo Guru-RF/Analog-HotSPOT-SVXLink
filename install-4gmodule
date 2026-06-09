@@ -93,8 +93,14 @@ ensure_os_ready() {
 
   # 3) Installed kernel newer than the one currently running?
   RUNNING_KERNEL=$(uname -r)
+  # Filter out the `-unsigned` flavour: Pi OS installs both the signed
+  # (booted) and unsigned (not booted) kernel packages with the same
+  # version, and `sort -V` would otherwise pick the unsigned name as
+  # "newest" purely because "unsigned" sorts after the empty suffix —
+  # producing a false-positive "reboot needed" right after a fresh boot.
   LATEST_KERNEL=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
                   | grep -E '^linux-image-[0-9]' \
+                  | grep -v -- '-unsigned$' \
                   | sed 's/^linux-image-//' \
                   | sort -V | tail -n1)
   if [[ -n "${LATEST_KERNEL}" && "${LATEST_KERNEL}" != "${RUNNING_KERNEL}" ]]; then

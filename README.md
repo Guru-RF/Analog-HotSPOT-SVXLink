@@ -425,28 +425,22 @@ differently from headphones / keyboards / car kits:
   bonded-mode flag.)
 - The OS radio just needs to be **powered on** so the app can use it.
 
-## Belgian users — SvxPortalApp
+## Where to get the apps
 
-If you're on the Belgian reflector, use **SvxPortalApp**:
+All companion apps for every platform — **macOS, Windows, Linux,
+Android, iPhone, iPad** — are linked from the central download portal:
 
-https://github.com/Guru-RF/SvxPortalApp/releases
+<https://svxlink-hotspot.app>
 
-Currently available for **macOS / Windows / Linux**; iOS and Android will
-follow.
+Two flavours are available there:
 
-For everybody else: the portal app integrates deeply with the reflector
-and needs extra software running on the reflector side. If there's
-interest in deploying it on your own reflector, please get in touch.
-
-## Standalone companion app — everyone
-
-There is also a standalone companion app that talks to any hotspot over
-BLE without any reflector-side dependency:
-
-https://github.com/Guru-RF/Analog-HotSPOT-App/releases
-
-Available for **macOS / Windows / Linux**; iOS and Android will follow.
-It has no map and you need to define the talkgroups manually.
+- **SvxPortalApp** — for users on the Belgian reflector. Integrates
+  deeply with the reflector (map, live talker list, …) and needs extra
+  software on the reflector side. For non-Belgian reflectors, get in
+  touch if you'd like to deploy the reflector-side component.
+- **Analog-HotSPOT-App** — standalone, works against any hotspot over
+  BLE with no reflector-side dependency. Has no map and you need to
+  define the talkgroups manually.
 
 ---
 

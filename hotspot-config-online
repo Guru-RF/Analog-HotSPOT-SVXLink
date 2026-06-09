@@ -655,7 +655,7 @@ EOF
   fi
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
   say "run [>sudo /usr/sbin/install-4gmodule] to install 4g support if you have a hotspot-4g"
-  say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and have the companion app on your computer (https://github.com/Guru-RF/Analog-HotSPOT-App/releases)"
+  say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and use the companion app on your computer / phone (https://svxlink-hotspot.app)"
   say ""
   say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
   say ""

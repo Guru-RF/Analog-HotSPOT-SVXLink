@@ -11,6 +11,30 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
+# Run a command in the background, show a spinner with a label on stderr
+# until it finishes, then propagate its exit code. Stdout / stderr of
+# the command go to /dev/null — wrap commands that need to capture output
+# separately. Pure bash so it works before gum is installed.
+spin_run() {
+  local label=$1
+  shift
+  ( "$@" >/dev/null 2>&1 ) &
+  local pid=$!
+  local chars='-\|/'
+  local i=0
+  # \r returns to col-0; \x1b[2K clears the line so a shorter spinner
+  # frame doesn't leave stale chars behind.
+  while kill -0 "$pid" 2>/dev/null; do
+    printf "\r\x1b[2K\x1b[38;5;220m  %s %s\x1b[39m" "${chars:$((i % 4)):1}" "$label" >&2
+    sleep 0.2
+    i=$((i + 1))
+  done
+  wait "$pid"
+  local rc=$?
+  printf "\r\x1b[2K" >&2
+  return $rc
+}
+
 RAW="https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master"
 INSTALLER_NAME="sudo /usr/sbin/install-bluetooth"
 
@@ -19,16 +43,23 @@ INSTALLER_NAME="sudo /usr/sbin/install-bluetooth"
 # out of sync, and the BlueZ stack in particular often needs the
 # post-upgrade reboot to enumerate the controller cleanly.
 ensure_os_ready() {
-  say "Checking for pending OS updates (apt-get update, 30s timeout)"
+  say "Checking for pending OS updates — this can take up to a minute on a fresh image or when unattended-upgrades is running in the background. Please wait..."
+
   # apt-get update can stall when another apt process holds the lock
   # (unattended-upgrades is the common culprit) or a mirror is slow.
   # Cap at 30s and fall back to the cached package list rather than
   # hanging forever.
-  if ! timeout 30 apt-get update -qq 2>/dev/null; then
+  if ! spin_run "Refreshing apt cache (up to 30s)" timeout 30 apt-get update -qq; then
     say "WARNING: apt update did not complete in 30s (offline, slow mirror, or another apt holds the lock — try 'sudo fuser /var/lib/dpkg/lock-frontend'). Continuing with the cached package list."
   fi
 
-  PENDING=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')
+  # The simulation against the cache is the bit that's actually slow on
+  # a heavily-pending box (107+ packages). Run it in the background so
+  # we can show a spinner while it works, then read the result back.
+  local upgrade_out
+  upgrade_out=$(mktemp)
+  spin_run "Computing pending package list" bash -c "apt-get -s upgrade >'${upgrade_out}' 2>/dev/null"
+  PENDING=$(grep -c '^Inst ' "${upgrade_out}")
   if [[ "${PENDING}" -gt 0 ]]; then
     say ""
     say "STOP — there are ${PENDING} pending package upgrade(s)."
@@ -40,12 +71,14 @@ ensure_os_ready() {
     say "and then re-run:  ${INSTALLER_NAME}"
     say ""
     say "First 10 pending packages:"
-    apt-get -s upgrade 2>/dev/null | grep '^Inst ' | head -10 | sed 's/^Inst /  - /'
+    grep '^Inst ' "${upgrade_out}" | head -10 | sed 's/^Inst /  - /'
     if [[ "${PENDING}" -gt 10 ]]; then
       say "  ... and $((PENDING - 10)) more"
     fi
+    rm -f "${upgrade_out}"
     exit 1
   fi
+  rm -f "${upgrade_out}"
 
   if [[ -f /var/run/reboot-required ]]; then
     say ""

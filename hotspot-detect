@@ -30,11 +30,22 @@ GPIO_2W      = 27   # 4th gen     — 2W power module marker
 
 chip = gpiod.Chip("gpiochip0")
 
+# Enable the SoC's internal pull-up on every strap pin so an unconnected
+# pin reads HIGH and only pins the board actively grounds read LOW.
+# Without this, GPIO 22 / 27 default to pull-down on the Pi and float-
+# read as LOW on hats that don't expose them — producing false-positive
+# VHF / 2W readings on UHF / 0.5W boards.
+_PULLUP = getattr(gpiod, "LINE_REQ_FLAG_BIAS_PULL_UP", 0)
+
 
 def is_grounded(pin):
-    """Check whether a GPIO pin is pulled LOW."""
+    """Check whether a GPIO pin is pulled LOW (with internal pull-up enabled)."""
     line = chip.get_line(pin)
-    line.request(consumer="rfhat_detect", type=gpiod.LINE_REQ_DIR_IN)
+    line.request(
+        consumer="rfhat_detect",
+        type=gpiod.LINE_REQ_DIR_IN,
+        flags=_PULLUP,
+    )
     val = line.get_value()
     line.release()
     return val == 0
@@ -50,10 +61,14 @@ def detect_hat():
     if trx_ground and hot_ground:
         device = "TRANSCEIVER_HAT"
         generation = "4"
-        if is_grounded(GPIO_VHF_NEW):
-            band = "VHF"
-        elif is_grounded(GPIO_UHF):
+        # Check the UHF strap first: with internal pull-ups enabled only one
+        # of the two should ever read LOW, but ordering UHF first means any
+        # remaining ambiguity (worn strap, dual-pop board, etc.) defaults
+        # to UHF rather than mis-reporting VHF.
+        if is_grounded(GPIO_UHF):
             band = "UHF"
+        elif is_grounded(GPIO_VHF_NEW):
+            band = "VHF"
         else:
             band = "UNKNOWN_BAND"
         power = "2W" if is_grounded(GPIO_2W) else "0.5W"

@@ -218,16 +218,20 @@ gum style --foreground 212 "${SVXEMAIL}"
 # Hostname — defaults to the reflector user callsign so the box advertises
 # itself on the LAN as ${SVXCALL}.local once mDNS picks it up. Reuse the
 # current system hostname as the in-place default if the user has already
-# customised it, so re-running config doesn't quietly reset it.
+# customised it, so re-running config doesn't quietly reset it. Forced to
+# lowercase: Linux/DNS hostnames are conventionally lowercase and some
+# tools choke on uppercase letters.
 OLDHOSTNAME=$(hostname 2>/dev/null)
 if [[ -z "${OLDHOSTNAME}" || "${OLDHOSTNAME}" == "hotspot" || "${OLDHOSTNAME}" == "raspberrypi" ]]; then
   OLDHOSTNAME="${SVXCALL}"
 fi
-gum style --foreground "#04B575" "Hostname (default: ${SVXCALL}):"
+OLDHOSTNAME="${OLDHOSTNAME,,}"
+gum style --foreground "#04B575" "Hostname (default: ${OLDHOSTNAME}):"
 NEW_HOSTNAME=$(gum input --value "${OLDHOSTNAME}")
 if [[ -z "${NEW_HOSTNAME}" ]]; then
   NEW_HOSTNAME="${OLDHOSTNAME}"
 fi
+NEW_HOSTNAME="${NEW_HOSTNAME,,}"
 gum style --foreground 212 "${NEW_HOSTNAME}"
 
 gum style --foreground "#04B575" "Band:"

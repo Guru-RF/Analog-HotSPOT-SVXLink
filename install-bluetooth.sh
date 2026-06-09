@@ -136,10 +136,32 @@ for cfg in /boot/firmware/config.txt /boot/config.txt; do
   fi
 done
 
-if [[ "${DISABLE_BT_REMOVED}" = "1" ]]; then
+# Re-enable hciuart on Pi-family images. install-radiomodule.sh disables
+# both `disable-bt` AND `hciuart.service`, so removing the overlay alone
+# wouldn't bring the BT chip up — hciuart is the service that actually
+# btattach's the BCM combo chip to the kernel over its UART. On Pi 5 the
+# unit doesn't exist (BT comes up via a different path), so skip there.
+HCIUART_TOUCHED=0
+if systemctl list-unit-files hciuart.service >/dev/null 2>&1 \
+   && systemctl list-unit-files hciuart.service | grep -q hciuart.service; then
+  if ! systemctl is-enabled --quiet hciuart.service 2>/dev/null; then
+    say "Enabling hciuart.service (was disabled — explains hci0 not appearing)"
+    run "systemctl enable hciuart.service"
+    HCIUART_TOUCHED=1
+  fi
+fi
+
+if [[ "${DISABLE_BT_REMOVED}" = "1" || "${HCIUART_TOUCHED}" = "1" ]]; then
   say ""
-  say "STOP — onboard Bluetooth was disabled in config.txt and has just been re-enabled."
-  say "The kernel won't see the BT chip until the next boot. Please run:"
+  say "STOP — onboard Bluetooth wasn't fully enabled and has just been brought up."
+  if [[ "${DISABLE_BT_REMOVED}" = "1" ]]; then
+    say "  - removed dtoverlay=disable-bt from config.txt"
+  fi
+  if [[ "${HCIUART_TOUCHED}" = "1" ]]; then
+    say "  - enabled hciuart.service"
+  fi
+  say ""
+  say "The kernel needs to re-init the BT subsystem at boot. Please run:"
   say ""
   say "    sudo reboot"
   say ""

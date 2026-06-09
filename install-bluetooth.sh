@@ -42,135 +42,144 @@ INSTALLER_NAME="sudo /usr/sbin/install-bluetooth"
 # kernel/libc upgrade left half-applied would put userspace and modules
 # out of sync, and the BlueZ stack in particular often needs the
 # post-upgrade reboot to enumerate the controller cleanly.
-ensure_os_ready() {
-  say "Checking for pending OS updates — this can take up to a minute on a fresh image or when unattended-upgrades is running in the background. Please wait..."
+# Consolidated prereq gate: check OS-update state AND BT-subsystem state in
+# one pass, auto-fix what we can (disable-bt overlay, hciuart enable), and
+# bail with ONE message listing everything the user needs to do — so they
+# go through one apt-upgrade + one reboot cycle instead of bouncing through
+# multiple stops.
+ensure_ready_to_install() {
+  say "Checking install prerequisites — this can take up to a minute on a fresh image or when unattended-upgrades is running in the background. Please wait..."
 
+  # Accumulators. BLOCKERS are pre-existing issues the user must resolve;
+  # AUTOFIXED are things we just changed that need a reboot to take effect.
+  local -a BLOCKERS=()
+  local -a AUTOFIXED=()
+  local APT_UPGRADE_NEEDED=0
+  local REBOOT_NEEDED=0
+
+  # --- OS update freshness ---
   # apt-get update can stall when another apt process holds the lock
   # (unattended-upgrades is the common culprit) or a mirror is slow.
-  # Cap at 30s and fall back to the cached package list rather than
-  # hanging forever.
+  # Cap at 30s and fall back to the cached package list rather than hang.
   if ! spin_run "Refreshing apt cache (up to 30s)" timeout 30 apt-get update -qq; then
     say "WARNING: apt update did not complete in 30s (offline, slow mirror, or another apt holds the lock — try 'sudo fuser /var/lib/dpkg/lock-frontend'). Continuing with the cached package list."
   fi
 
-  # The simulation against the cache is the bit that's actually slow on
-  # a heavily-pending box (107+ packages). Run it in the background so
-  # we can show a spinner while it works, then read the result back.
+  # The cache-side simulation is the bit that's actually slow on a heavily
+  # -pending box (100+ packages). Capture to tmpfile so we keep the head-10
+  # listing for the report.
   local upgrade_out
   upgrade_out=$(mktemp)
   spin_run "Computing pending package list" bash -c "apt-get -s upgrade >'${upgrade_out}' 2>/dev/null"
+  local PENDING
   PENDING=$(grep -c '^Inst ' "${upgrade_out}")
   if [[ "${PENDING}" -gt 0 ]]; then
-    say ""
-    say "STOP — there are ${PENDING} pending package upgrade(s)."
-    say "Please run, in order:"
-    say ""
-    say "    sudo apt -y update && sudo apt -y upgrade"
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    say ""
-    say "First 10 pending packages:"
-    grep '^Inst ' "${upgrade_out}" | head -10 | sed 's/^Inst /  - /'
-    if [[ "${PENDING}" -gt 10 ]]; then
-      say "  ... and $((PENDING - 10)) more"
-    fi
-    rm -f "${upgrade_out}"
-    exit 1
+    BLOCKERS+=("${PENDING} package upgrade(s) pending")
+    APT_UPGRADE_NEEDED=1
+    # Pending upgrades likely include a kernel — always pair the upgrade
+    # with a reboot in the recovery instructions.
+    REBOOT_NEEDED=1
   fi
-  rm -f "${upgrade_out}"
 
   if [[ -f /var/run/reboot-required ]]; then
-    say ""
-    say "STOP — the system applied updates that require a reboot first."
-    say "(/var/run/reboot-required is present)"
-    say ""
-    say "Please run:"
-    say ""
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    exit 1
+    BLOCKERS+=("/var/run/reboot-required present (system applied updates that need a reboot)")
+    REBOOT_NEEDED=1
   fi
 
+  local RUNNING_KERNEL LATEST_KERNEL
   RUNNING_KERNEL=$(uname -r)
   # Filter out the `-unsigned` flavour: Pi OS installs both the signed
   # (booted) and unsigned (not booted) kernel packages with the same
   # version, and `sort -V` would otherwise pick the unsigned name as
-  # "newest" purely because "unsigned" sorts after the empty suffix —
-  # producing a false-positive "reboot needed" right after a fresh boot.
+  # "newest" purely because "unsigned" sorts after the empty suffix.
   LATEST_KERNEL=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
                   | grep -E '^linux-image-[0-9]' \
                   | grep -v -- '-unsigned$' \
                   | sed 's/^linux-image-//' \
                   | sort -V | tail -n1)
   if [[ -n "${LATEST_KERNEL}" && "${LATEST_KERNEL}" != "${RUNNING_KERNEL}" ]]; then
-    say ""
-    say "STOP — running kernel (${RUNNING_KERNEL}) is older than the installed kernel (${LATEST_KERNEL})."
-    say "A reboot is needed before installing."
-    say ""
-    say "Please run:"
-    say ""
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    exit 1
+    BLOCKERS+=("running kernel (${RUNNING_KERNEL}) is older than installed kernel (${LATEST_KERNEL})")
+    REBOOT_NEEDED=1
   fi
 
-  say "OS is up to date and current kernel is running"
+  # --- BT subsystem ---
+  # If the onboard BT chip is disabled in config.txt, remove the overlay.
+  # The device-tree change only takes effect at boot, so we must reboot
+  # before bluetoothd can find the chip.
+  local cfg
+  for cfg in /boot/firmware/config.txt /boot/config.txt; do
+    if [[ -f "$cfg" ]] && grep -qE '^[[:space:]]*dtoverlay=disable-bt[[:space:]]*$' "$cfg"; then
+      say "Removing dtoverlay=disable-bt from $cfg (onboard BT was disabled)"
+      run "sed -i -E '/^[[:space:]]*dtoverlay=disable-bt[[:space:]]*\$/d' $cfg"
+      AUTOFIXED+=("removed dtoverlay=disable-bt from $cfg")
+      REBOOT_NEEDED=1
+    fi
+  done
+
+  # Re-enable hciuart on Pi-family images. install-radiomodule.sh disables
+  # both `disable-bt` AND `hciuart.service`, so removing the overlay alone
+  # wouldn't bring the BT chip up — hciuart is what btattach's the BCM
+  # combo chip to the kernel. On Pi 5 the unit doesn't exist (BT comes
+  # up differently), so we skip there.
+  if systemctl list-unit-files hciuart.service >/dev/null 2>&1 \
+     && systemctl list-unit-files hciuart.service | grep -q hciuart.service; then
+    if ! systemctl is-enabled --quiet hciuart.service 2>/dev/null; then
+      say "Enabling hciuart.service (was disabled — explains hci0 not appearing)"
+      run "systemctl enable hciuart.service"
+      AUTOFIXED+=("enabled hciuart.service")
+      REBOOT_NEEDED=1
+    fi
+  fi
+
+  # --- Report + maybe-bail ---
+  if (( ${#BLOCKERS[@]} == 0 && ${#AUTOFIXED[@]} == 0 )); then
+    say "All prerequisites satisfied — proceeding with install"
+    rm -f "${upgrade_out}"
+    return 0
+  fi
+
+  say ""
+  say "STOP — the system isn't ready to install Bluetooth yet."
+  say ""
+  if (( ${#BLOCKERS[@]} > 0 )); then
+    say "Issues you need to address:"
+    local b
+    for b in "${BLOCKERS[@]}"; do say "  - ${b}"; done
+    say ""
+  fi
+  if (( ${#AUTOFIXED[@]} > 0 )); then
+    say "Auto-fixed (takes effect on next boot):"
+    local a
+    for a in "${AUTOFIXED[@]}"; do say "  - ${a}"; done
+    say ""
+  fi
+  if (( APT_UPGRADE_NEEDED )); then
+    say "First 10 pending packages:"
+    grep '^Inst ' "${upgrade_out}" | head -10 | sed 's/^Inst /  - /'
+    if [[ "${PENDING}" -gt 10 ]]; then
+      say "  ... and $((PENDING - 10)) more"
+    fi
+    say ""
+  fi
+  say "Recovery — run these in order:"
+  say ""
+  if (( APT_UPGRADE_NEEDED )); then
+    say "    sudo apt -y update && sudo apt -y upgrade"
+  fi
+  if (( REBOOT_NEEDED )); then
+    say "    sudo reboot"
+  fi
+  say "    ${INSTALLER_NAME}"
+  say ""
+  if (( ${#AUTOFIXED[@]} > 0 )); then
+    say "(Nothing else has been changed on this run — packages, BlueZ tuning,"
+    say "and hotspot-bluetooth will be installed on the post-reboot run.)"
+  fi
+  rm -f "${upgrade_out}"
+  exit 0
 }
 
-ensure_os_ready
-
-# Before touching apt / services: if the onboard BT chip is disabled in
-# config.txt, remove the overlay and bail. The device-tree change only
-# takes effect at boot, so any service-restart we'd do further down would
-# fail because /sys/class/bluetooth/hci0 wouldn't exist yet — leaving the
-# user thinking the installer succeeded when it actually couldn't.
-DISABLE_BT_REMOVED=0
-for cfg in /boot/firmware/config.txt /boot/config.txt; do
-  if [[ -f "$cfg" ]] && grep -qE '^[[:space:]]*dtoverlay=disable-bt[[:space:]]*$' "$cfg"; then
-    say "Removing dtoverlay=disable-bt from $cfg (onboard BT was disabled)"
-    run "sed -i -E '/^[[:space:]]*dtoverlay=disable-bt[[:space:]]*\$/d' $cfg"
-    DISABLE_BT_REMOVED=1
-  fi
-done
-
-# Re-enable hciuart on Pi-family images. install-radiomodule.sh disables
-# both `disable-bt` AND `hciuart.service`, so removing the overlay alone
-# wouldn't bring the BT chip up — hciuart is the service that actually
-# btattach's the BCM combo chip to the kernel over its UART. On Pi 5 the
-# unit doesn't exist (BT comes up via a different path), so skip there.
-HCIUART_TOUCHED=0
-if systemctl list-unit-files hciuart.service >/dev/null 2>&1 \
-   && systemctl list-unit-files hciuart.service | grep -q hciuart.service; then
-  if ! systemctl is-enabled --quiet hciuart.service 2>/dev/null; then
-    say "Enabling hciuart.service (was disabled — explains hci0 not appearing)"
-    run "systemctl enable hciuart.service"
-    HCIUART_TOUCHED=1
-  fi
-fi
-
-if [[ "${DISABLE_BT_REMOVED}" = "1" || "${HCIUART_TOUCHED}" = "1" ]]; then
-  say ""
-  say "STOP — onboard Bluetooth wasn't fully enabled and has just been brought up."
-  if [[ "${DISABLE_BT_REMOVED}" = "1" ]]; then
-    say "  - removed dtoverlay=disable-bt from config.txt"
-  fi
-  if [[ "${HCIUART_TOUCHED}" = "1" ]]; then
-    say "  - enabled hciuart.service"
-  fi
-  say ""
-  say "The kernel needs to re-init the BT subsystem at boot. Please run:"
-  say ""
-  say "    sudo reboot"
-  say ""
-  say "and then re-run:  ${INSTALLER_NAME}"
-  say ""
-  say "Nothing else has been changed on this run — packages, BlueZ tuning,"
-  say "and hotspot-bluetooth will all be installed on the post-reboot run."
-  exit 0
-fi
+ensure_ready_to_install
 
 say "Installing Bluetooth prerequisites"
 run "apt install -y bluez python3-dbus python3-gi wget rfkill"

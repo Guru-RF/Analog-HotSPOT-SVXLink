@@ -55,18 +55,26 @@ else
   systemctl disable fmchip-monitor
 fi
 
-# Flag PRO variant — drives a few PRO-only choices below (squelch via GPIO
-# instead of svxlink CTCSS decode, no per-tone TG mapping, different RF
-# input default, etc.).
+echo ""
+HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
+echo "${HOTSPOT_DETECT_OUT}"
+DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}"       | awk -F': ' '/^BAND:/ {print $2}')
+DETECTED_GENERATION=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^GENERATION:/ {print $2}')
+DETECTED_POWER=$(echo "${HOTSPOT_DETECT_OUT}"      | awk -F': ' '/^POWER:/ {print $2}')
+
+# Flag for "new audio path" — drives squelch via GPIO instead of svxlink
+# CTCSS decode, no per-tone TG mapping, RF input default of 65, SA818
+# filters enabled, etc. Triggered by EITHER:
+#   - a PRO chip ID (most reliable when the chip is reachable on serial), or
+#   - a 4th-gen board strap (authoritative on production hardware; also
+#     covers the case where the chip ID can't be read yet over serial).
 IS_PRO=0
 if [[ "${CHIPNAME}" == *PRO* ]]; then
   IS_PRO=1
 fi
-
-echo ""
-HOTSPOT_DETECT_OUT=$(/usr/sbin/hotspot-detect 2>&1)
-echo "${HOTSPOT_DETECT_OUT}"
-DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^BAND:/ {print $2}')
+if [[ "${DETECTED_GENERATION}" == "4" ]]; then
+  IS_PRO=1
+fi
 
 OLDCPVOL=$(grep volume /usr/sbin/hotspot 2>/dev/null | awk '{ print $6 }' | tail -n 1)
 OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')

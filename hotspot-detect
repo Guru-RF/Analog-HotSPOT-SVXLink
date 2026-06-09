@@ -1,13 +1,35 @@
 #!/usr/bin/env python3
+"""
+Probe the GPIO straps the RF.Guru hat exposes to identify which hardware
+generation is fitted and which band module it carries.
+
+Strap map (BCM GPIO numbering, "grounded" = pulled LOW):
+
+  1st–3rd gen:
+    GPIO 6  ground only          -> Transceiver HAT
+    GPIO 13 ground only          -> Hotspot HAT
+    GPIO 5  ground               -> UHF
+    GPIO 7  ground               -> VHF
+    (neither GPIO 6 nor 13 low → pre-strap board, OLD_DEVICE)
+
+  4th gen (board with SA818PRO + new audio chain):
+    GPIO 6  AND GPIO 13 both low -> 4th gen marker; always TRANSCEIVER_HAT
+    GPIO 5  ground               -> UHF
+    GPIO 22 ground               -> VHF
+    GPIO 27 ground               -> 2W power module (else 0.5W)
+"""
+
 import gpiod
 
-# GPIO lines
-GPIO_TRX = 6    # Grounded → Transceiver HAT
-GPIO_HOT = 13   # Grounded → Hotspot HAT
-GPIO_UHF = 5    # Grounded → UHF
-GPIO_VHF = 7    # Grounded → VHF
+GPIO_TRX     = 6    # both gens — Transceiver HAT strap
+GPIO_HOT     = 13   # both gens — Hotspot HAT strap (4th gen pulls this AND TRX low)
+GPIO_UHF     = 5    # both gens — UHF strap
+GPIO_VHF_OLD = 7    # 1st–3rd gen — VHF strap
+GPIO_VHF_NEW = 22   # 4th gen     — VHF strap
+GPIO_2W      = 27   # 4th gen     — 2W power module marker
 
 chip = gpiod.Chip("gpiochip0")
+
 
 def is_grounded(pin):
     """Check whether a GPIO pin is pulled LOW."""
@@ -19,14 +41,29 @@ def is_grounded(pin):
 
 
 def detect_hat():
-    # --- Device Type ---
     trx_ground = is_grounded(GPIO_TRX)
     hot_ground = is_grounded(GPIO_HOT)
 
-    if not trx_ground and not hot_ground:
-        # → This is an older device, do nothing
-        return "OLD_DEVICE", "UNKNOWN"
+    # --- 4th-generation board: both straps low ---
+    # Check this BEFORE the 1st-3rd gen branch, otherwise trx_ground alone
+    # would mis-classify as a plain Transceiver HAT.
+    if trx_ground and hot_ground:
+        device = "TRANSCEIVER_HAT"
+        generation = "4"
+        if is_grounded(GPIO_VHF_NEW):
+            band = "VHF"
+        elif is_grounded(GPIO_UHF):
+            band = "UHF"
+        else:
+            band = "UNKNOWN_BAND"
+        power = "2W" if is_grounded(GPIO_2W) else "0.5W"
+        return device, band, generation, power
 
+    # --- Pre-strap board (no hat ID) ---
+    if not trx_ground and not hot_ground:
+        return "OLD_DEVICE", "UNKNOWN", "PRE", "UNKNOWN"
+
+    # --- 1st–3rd gen ---
     if trx_ground:
         device = "TRANSCEIVER_HAT"
     elif hot_ground:
@@ -34,9 +71,8 @@ def detect_hat():
     else:
         device = "UNKNOWN_DEVICE"
 
-    # --- Band Detection ---
     uhf_ground = is_grounded(GPIO_UHF)
-    vhf_ground = is_grounded(GPIO_VHF)
+    vhf_ground = is_grounded(GPIO_VHF_OLD)
 
     # Bug workaround: if both grounded → treat as VHF
     if vhf_ground:
@@ -46,10 +82,12 @@ def detect_hat():
     else:
         band = "UNKNOWN_BAND"
 
-    return device, band
+    return device, band, "1-3", "UNKNOWN"
 
 
 if __name__ == "__main__":
-    device, band = detect_hat()
+    device, band, generation, power = detect_hat()
     print("DEVICE:", device)
     print("BAND:", band)
+    print("GENERATION:", generation)
+    print("POWER:", power)

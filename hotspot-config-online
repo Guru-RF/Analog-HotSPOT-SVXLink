@@ -62,18 +62,33 @@ DETECTED_BAND=$(echo "${HOTSPOT_DETECT_OUT}"       | awk -F': ' '/^BAND:/ {print
 DETECTED_GENERATION=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^GENERATION:/ {print $2}')
 DETECTED_POWER=$(echo "${HOTSPOT_DETECT_OUT}"      | awk -F': ' '/^POWER:/ {print $2}')
 
-# Flag for "new audio path" — drives squelch via GPIO instead of svxlink
-# CTCSS decode, no per-tone TG mapping, RF input default of 65, SA818
-# filters enabled, etc. Triggered by EITHER:
-#   - a PRO chip ID (most reliable when the chip is reachable on serial), or
-#   - a 4th-gen board strap (authoritative on production hardware; also
-#     covers the case where the chip ID can't be read yet over serial).
-IS_PRO=0
+# Two independent capability flags — must NOT be conflated:
+#
+#   IS_PRO_CHIP   ← chip-name check. Drives EMPHASIS handling and CTCSS
+#                   detection path: PRO has hardware CTCSS decode that
+#                   asserts GPIO12, so svxlink reads squelch off GPIO
+#                   (SQL_DET=GPIOD) and we comment out the CTCSS_*
+#                   decode keys. PRO also handles emphasis itself, so
+#                   DEEMPHASIS=0 / PREEMPHASIS=0 to avoid double shaping.
+#                   The per-tone CTCSS_TO_TG mapping is meaningless on
+#                   PRO, so we skip the mapping prompt and the helper.
+#
+#   IS_NEW_BOARD  ← board-generation check. Drives AUDIO path defaults:
+#                   the 4th-gen board's analog chain wants RFVOL=65 (alsa
+#                   %) and SA818 chip-side filters ENABLED. Older boards
+#                   keep RFVOL=0 (SA818 0–23) and chip filters DISABLED,
+#                   letting svxlink/LADSPA do the shaping.
+#
+# Either flag can be set independently of the other — e.g. a non-PRO chip
+# on a 4th-gen board takes the new audio defaults but the old CTCSS path.
+IS_PRO_CHIP=0
 if [[ "${CHIPNAME}" == *PRO* ]]; then
-  IS_PRO=1
+  IS_PRO_CHIP=1
 fi
+
+IS_NEW_BOARD=0
 if [[ "${DETECTED_GENERATION}" == "4" ]]; then
-  IS_PRO=1
+  IS_NEW_BOARD=1
 fi
 
 OLDCPVOL=$(grep volume /usr/sbin/hotspot 2>/dev/null | awk '{ print $6 }' | tail -n 1)
@@ -215,7 +230,7 @@ if [ "${BAND}" = "2m" ]; then
   fi
 fi
 
-if [[ "${IS_PRO}" == "1" ]]; then
+if [[ "${IS_PRO_CHIP}" == "1" ]]; then
   # SA818PRO: chip handles CTCSS in hardware and asserts GPIO12 only when
   # the configured RX tone is present. svxlink reads that GPIO as squelch
   # (SQL_DET=GPIOD below), so we ask for one RX tone instead of a per-tone
@@ -351,8 +366,8 @@ gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
 AFVOL=77
 gum style --foreground 212 "${AFVOL}"
 
-if [[ "${IS_PRO}" == "1" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for SA818PRO):"
+if [[ "${IS_NEW_BOARD}" == "1" ]]; then
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for 4th-gen board):"
   RFVOL=65
 else
   gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
@@ -412,7 +427,7 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--LOC--/${LOC}/g" /etc/svxlink/node_info.json
   perl -i -pe "s/--HIDDEN--/false/g" /etc/svxlink/node_info.json
 
-  if [[ "${IS_PRO}" == "1" ]]; then
+  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
     say "Applying SA818PRO-specific overrides to svxlink.conf"
     # Squelch moves from svxlink's CTCSS decoder to GPIO12, driven by the
     # PRO chip's own hardware CTCSS decoder. Comment the old keys and
@@ -435,10 +450,11 @@ if [ $RESULT -eq 0 ]; then
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
   echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},${CTCSSRX} --squelch 8" >> /usr/sbin/hotspot
-  # PRO has its own emphasis stage and benefits from the chip-side
-  # filters being on; the original SA818 sounds better with svxlink/LADSPA
-  # doing the shaping, so leave its filters disabled.
-  if [[ "${IS_PRO}" == "1" ]]; then
+  # Filter selection follows the BOARD generation (audio path), NOT the
+  # chip type. 4th-gen boards want the chip-side filters on; older boards
+  # sound better with svxlink/LADSPA doing the shaping, so leave the
+  # chip filters off.
+  if [[ "${IS_NEW_BOARD}" == "1" ]]; then
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
   else
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot
@@ -525,7 +541,7 @@ EOF
   # which the PRO chip's GPIO-squelch path doesn't use. Refresh it on
   # non-PRO hardware; rm any stale copy on PRO so people don't run it
   # and get confused.
-  if [[ "${IS_PRO}" == "1" ]]; then
+  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
     rm -f /usr/sbin/hotspot-talkgroups
   else
     say "Downloading hotspot-talkgroups"
@@ -552,7 +568,7 @@ EOF
   say ""
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
-  if [[ "${IS_PRO}" != "1" ]]; then
+  if [[ "${IS_PRO_CHIP}" != "1" ]]; then
     say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups"
   fi
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"

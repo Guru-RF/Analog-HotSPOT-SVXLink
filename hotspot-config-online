@@ -25,12 +25,13 @@ else
 fi
 say "Using serial port ${SERIAL_PORT}"
 
-# Refresh hotspot-detect from upstream BEFORE we run it. Otherwise any
-# newly-added strap (new GPIOs, GENERATION/POWER fields, …) is detected
-# only on the *next* config run, because the regular auto-update block
-# doesn't fire until after the user has already answered the prompts.
-# Stage to /tmp first so a half-finished download can't brick the
-# installed copy. Soft-fail on no internet / GitHub down.
+# Refresh detection tooling from upstream BEFORE we use it. Otherwise any
+# newly-added strap (new GPIOs, GENERATION/POWER fields, sa818 chip
+# variants, …) is detected only on the *next* config run, because the
+# regular auto-update block doesn't fire until after the user has already
+# answered every prompt. Stage each download to /tmp first so a
+# half-finished wget can't brick the installed copy. Soft-fail on no
+# internet / GitHub down — the existing installed copies keep being used.
 say "Refreshing hotspot-detect from upstream"
 if wget -q -O /tmp/hotspot-detect.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-detect 2>/dev/null \
    && [ -s /tmp/hotspot-detect.new ]; then
@@ -39,6 +40,16 @@ if wget -q -O /tmp/hotspot-detect.new https://raw.githubusercontent.com/Guru-RF/
 else
   say "Could not refresh hotspot-detect (offline?), using installed copy"
   rm -f /tmp/hotspot-detect.new
+fi
+
+say "Refreshing sa818 firmware module from upstream"
+if wget -q -O /tmp/sa818.new https://raw.githubusercontent.com/Guru-RF/SA818/main/sa818.py 2>/dev/null \
+   && [ -s /tmp/sa818.new ]; then
+  mv /tmp/sa818.new /usr/local/bin/sa818
+  chmod +x /usr/local/bin/sa818
+else
+  say "Could not refresh sa818 (offline?), using installed copy"
+  rm -f /tmp/sa818.new
 fi
 
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
@@ -429,9 +440,8 @@ if [ $RESULT -eq 0 ]; then
   run "cp /etc/svxlink/node_info.json /tmp/node_info.json.${EPOCH}"
   run "rm -f /tmp/svxlink.conf"
 
-  say "Downloading latest sa818 firmware module"
-  run "wget -O /usr/local/bin/sa818 https://raw.githubusercontent.com/Guru-RF/SA818/main/sa818.py > /dev/null 2>&1"
-  run "chmod +x /usr/local/bin/sa818"
+  # sa818 was already refreshed at script start so chip detection used
+  # the latest version — no second download here.
 
   say "Downloading fmchip-monitor"
   run "wget -O /usr/sbin/fmchip-monitor https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/fmchip-monitor.py > /dev/null 2>&1"

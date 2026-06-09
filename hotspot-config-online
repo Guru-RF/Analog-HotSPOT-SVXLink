@@ -25,6 +25,22 @@ else
 fi
 say "Using serial port ${SERIAL_PORT}"
 
+# Refresh hotspot-detect from upstream BEFORE we run it. Otherwise any
+# newly-added strap (new GPIOs, GENERATION/POWER fields, …) is detected
+# only on the *next* config run, because the regular auto-update block
+# doesn't fire until after the user has already answered the prompts.
+# Stage to /tmp first so a half-finished download can't brick the
+# installed copy. Soft-fail on no internet / GitHub down.
+say "Refreshing hotspot-detect from upstream"
+if wget -q -O /tmp/hotspot-detect.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-detect 2>/dev/null \
+   && [ -s /tmp/hotspot-detect.new ]; then
+  mv /tmp/hotspot-detect.new /usr/sbin/hotspot-detect
+  chmod +x /usr/sbin/hotspot-detect
+else
+  say "Could not refresh hotspot-detect (offline?), using installed copy"
+  rm -f /tmp/hotspot-detect.new
+fi
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next

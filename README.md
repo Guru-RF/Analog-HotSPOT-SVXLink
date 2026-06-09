@@ -228,6 +228,141 @@ sudo tail -f /var/log/svxlink
 
 ---
 
+# Monitoring and tuning the 4G link
+
+Only relevant on 4G hotspots (the `install-4gmodule` flavour).
+
+## Watching connection attempts
+
+The 4G stack logs to journald via two systemd units:
+
+| Service | What it logs |
+| --- | --- |
+| `hotspot-4g.service` | Connection attempts — "Attempt N/99", QMI device wait, registration wait, WDS session start, DHCP, "online" / "giving up after N attempts". Logs once per session/restart. |
+| `hotspot-4g-monitor.service` | Periodic health probes — "probe failed (N/3)", "link recovered after N failed probe(s)", "link stale — restarting hotspot-4g.service". |
+
+```bash
+# Live, current session + new lines as they come
+sudo journalctl -u hotspot-4g -f
+sudo journalctl -u hotspot-4g-monitor -f
+
+# Both at once
+sudo journalctl -u hotspot-4g -u hotspot-4g-monitor -f
+
+# Just this boot
+sudo journalctl -u hotspot-4g -b --no-pager
+
+# Last hour
+sudo journalctl -u hotspot-4g --since "1 hour ago" --no-pager
+```
+
+The companion app's BLE feed (`sg` field) also shows the live signal strength — same data, no terminal.
+
+## Asking the modem directly
+
+These work independently of our scripts — handy for sanity-checking:
+
+```bash
+# Is it registered? On which network / band?
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-get-serving-system
+
+# Signal strength in dBm
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-get-signal-strength
+
+# Which IP did the WDS session pull?
+ip addr show wwan0
+ip route | grep wwan0
+```
+
+Healthy output of the first command contains `Registration state: 'registered'` and your home network (or a roaming partner with `Forbidden: 'no'`).
+
+## Stuck on a forbidden roaming partner
+
+Symptom — `--nas-get-serving-system` shows:
+
+```text
+Registration state: 'registration-denied'
+Roaming status: 'on'
+Forbidden: 'yes'
+```
+
+This is your roaming partner saying *"your SIM provider isn't on my allowed-roamers list"*. The modem keeps camping on it because it has the strongest signal at your location, even though other carriers in range would accept the SIM. The fix is to bias the modem toward those other carriers.
+
+### 1. See what's actually visible
+
+```bash
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-network-scan
+```
+
+For each network you'll get an MCC, MNC, Description, and a Status flag list. Note the ones marked `not-forbidden` — those are your candidates.
+
+### 2. Find the right MCC/MNC for your country
+
+- The scan output already shows it (MCC + MNC per network).
+- Or look it up on a reference like <https://www.mcc-mnc.com/> — pick the carriers active in your area.
+
+A few examples:
+
+| Country | Carrier | MCCMNC |
+| --- | --- | --- |
+| Belgium | Proximus | `20601` |
+| Belgium | BASE | `20620` |
+| Belgium | Orange BE | `20610` |
+| Netherlands | KPN | `20408` |
+| Netherlands | Vodafone NL | `20404` |
+| Germany | Telekom DE | `26201` |
+| Germany | Vodafone DE | `26202` |
+| France | Orange FR | `20801` |
+| France | SFR | `20810` |
+
+### 3. Pin the preferred-networks list
+
+```bash
+sudo qmicli -p -d /dev/cdc-wdm0 \
+  --nas-set-preferred-networks="<MCCMNC>,<access_tech>,<MCCMNC>,<access_tech>,..."
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-force-network-search
+sleep 8
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-get-serving-system   # expect 'registered'
+```
+
+`<access_tech>` varies by your libqmi version. Try in this order until one is accepted:
+
+| Try | Notes |
+| --- | --- |
+| `eutran` | Formal 3GPP name for LTE access. Most common on recent libqmi. |
+| `eutra` | Older libqmi spelling. |
+| `lte` | Newest libqmi spelling. |
+| `unspecified` | Matches any RAT — use as a fallback. |
+
+This setting is **persistent in the modem's NV memory** — it survives reboots and even `hotspot-4g`'s low-power/online reset cycle. You don't have to redo it after every boot.
+
+### 4. Make it survive an image re-flash too
+
+For repeatability across SD-card re-flashes or modem factory resets, add it to `/etc/hotspot-4g.conf`:
+
+```bash
+PREFERRED_NETWORKS="20610,eutran,20601,eutran"
+```
+
+`hotspot-4g` re-applies this on every script start (only on the first attempt of the connect loop, so retries stay fast), so the bias is always in place after the SD card hits the device.
+
+### 5. Kick the service to pick up the new registration
+
+```bash
+sudo systemctl restart hotspot-4g
+sudo journalctl -u hotspot-4g -f
+```
+
+If the scan in step 1 showed **only** the forbidden carrier (rural area, no alternative coverage), preference-setting won't help — talk to your SIM provider about adding a roaming agreement with that carrier or switch to a SIM that has one.
+
+To clear a preferred-networks list:
+
+```bash
+sudo qmicli -p -d /dev/cdc-wdm0 --nas-set-preferred-networks=""
+```
+
+---
+
 # Activating a Talkgroup
 
 ## Preferred: DTMF

@@ -19,9 +19,13 @@ INSTALLER_NAME="sudo /usr/sbin/install-bluetooth"
 # out of sync, and the BlueZ stack in particular often needs the
 # post-upgrade reboot to enumerate the controller cleanly.
 ensure_os_ready() {
-  say "Checking for pending OS updates"
-  if ! apt-get update -qq 2>/dev/null; then
-    say "WARNING: apt update failed (offline?) — checking against the cached package list"
+  say "Checking for pending OS updates (apt-get update, 30s timeout)"
+  # apt-get update can stall when another apt process holds the lock
+  # (unattended-upgrades is the common culprit) or a mirror is slow.
+  # Cap at 30s and fall back to the cached package list rather than
+  # hanging forever.
+  if ! timeout 30 apt-get update -qq 2>/dev/null; then
+    say "WARNING: apt update did not complete in 30s (offline, slow mirror, or another apt holds the lock — try 'sudo fuser /var/lib/dpkg/lock-frontend'). Continuing with the cached package list."
   fi
 
   PENDING=$(apt-get -s upgrade 2>/dev/null | grep -c '^Inst ')

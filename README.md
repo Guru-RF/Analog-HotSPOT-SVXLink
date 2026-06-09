@@ -229,16 +229,48 @@ sudo tail -f /var/log/svxlink
 
 # Activating a Talkgroup
 
-To activate a talkgroup, send the corresponding CTCSS tone from the mapping while in TG0.
-
-You need to be in TG0, you can wait until there is no traffic, you’ll hear a bleep tone 15 seconds after a QSO ended.
-
-This will instantly open the talkgroup – no need for double presses like before.
-You can start speaking immediately!
-
-Alternatively you can use:
+## Preferred: DTMF
 
     DTMF 91<TALKGROUP>#
+
+This is the **recommended way** to switch talkgroups. It works at any
+moment — even while the network is busy — and it doesn't disturb anyone
+else on the air:
+
+- **DTMF digits are muted at the hotspot** (svxlink's `DTMF_MUTING=1` in
+  `[Rx1]`), so the network never hears your tones. You can't accidentally
+  send a DTMF burst into someone's QSO.
+- **No wait for traffic to end.** Send the sequence whenever it's
+  convenient; the switch happens locally and the next time you key up
+  you're on the new TG.
+- **No requirement to be on TG0 first.** `91<TG>#` jumps straight from
+  whichever talkgroup you're currently on.
+
+Examples:
+
+| What | DTMF |
+| --- | --- |
+| Switch to TG 91 | `9191#` |
+| Switch to TG 9000 | `919000#` |
+| Return to TG 0 (parking) | `910#` |
+| Temporarily monitor another TG for one hour | `94<TG>#` (e.g. `9423#`) |
+
+## Alternative: CTCSS tone mapping (software-CTCSS chips only)
+
+To activate a talkgroup, send the corresponding CTCSS tone from the
+[CTCSS Talkgroup Mapping](#ctcss-talkgroup-mapping) while in TG0.
+
+You need to be in TG0, and you need to wait until there's no traffic —
+you'll hear a bleep tone 15 seconds after a QSO ended, that's your cue.
+
+Once it switches it's instant – no double presses like before, you can
+start speaking immediately.
+
+Caveats vs DTMF: you have to wait for a quiet moment, and you have to
+remember the tone-to-TG mapping. It's also unavailable on SA818PRO
+hotspots (no software CTCSS decode — see
+[CTCSS Talkgroup Mapping](#ctcss-talkgroup-mapping)). DTMF works on
+every chip and every network state, so prefer DTMF.
 
 ---
 

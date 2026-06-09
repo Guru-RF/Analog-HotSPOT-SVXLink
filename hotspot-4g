@@ -2,6 +2,7 @@
 set -uo pipefail  # note: NOT -e, we want to handle failures
 CONF="/etc/hotspot-4g.conf"
 APN="globaldata.iot"; IP_TYPE="4"; AUTH=""; APN_USER=""; APN_PASS=""
+PREFERRED_NETWORKS=""
 [[ -f "$CONF" ]] && source "$CONF"
 
 DEV=/dev/cdc-wdm0
@@ -14,6 +15,21 @@ stop_modemmanager() {
   # ModemManager will hold /dev/cdc-wdm0 and make every non-proxied qmicli
   # call return empty. Keep it out of the way for the whole session.
   systemctl stop ModemManager.service 2>/dev/null || true
+}
+
+apply_preferred_networks() {
+  # When PREFERRED_NETWORKS is set in hotspot-4g.conf, push it into the
+  # modem's NV-stored preference list. The modem already keeps the list
+  # across reboots — this call just re-asserts it, so a fresh image / a
+  # modem factory reset can't silently drop the bias and let the modem
+  # start camping on a forbidden roaming partner again. Cheap to run
+  # repeatedly (one NV write per script start, modem flash easily takes
+  # millions of cycles).
+  [[ -z "${PREFERRED_NETWORKS}" ]] && return
+  log "Applying PREFERRED_NETWORKS=${PREFERRED_NETWORKS}"
+  qmicli -p -d "$DEV" --nas-set-preferred-networks="${PREFERRED_NETWORKS}" \
+    >/dev/null 2>&1 \
+    || log "WARNING: failed to apply preferred networks (continuing)"
 }
 
 cleanup_sessions() {
@@ -94,6 +110,11 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
 
   cleanup_sessions
   wait_for_device || { log "no $DEV"; reset_modem; continue; }
+
+  # Push PREFERRED_NETWORKS to NV once we know the device exists. Only
+  # runs on the first attempt — re-asserting it every retry would slow
+  # the recovery loop down for no benefit.
+  (( attempt == 1 )) && apply_preferred_networks
 
   echo Y > /sys/class/net/$IFACE/qmi/raw_ip
   ip link set "$IFACE" up

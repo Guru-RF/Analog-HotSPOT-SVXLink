@@ -597,6 +597,30 @@ EOF
     run "wget -O /usr/sbin/hotspot-bluetooth https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-bluetooth > /dev/null 2>&1"
     run "chmod +x /usr/sbin/hotspot-bluetooth"
     run "wget -O /etc/systemd/system/hotspot-bluetooth.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-bluetooth.service > /dev/null 2>&1"
+
+    # Re-apply the BlueZ tuning that install-bluetooth.sh wrote on first
+    # install. All idempotent — running these again on an already-tuned
+    # box is a no-op. Keep in sync with install-bluetooth.sh.
+    if [[ -f /etc/bluetooth/main.conf ]]; then
+      say "Re-applying /etc/bluetooth/main.conf tuning"
+      run "sed -i -E 's/^[#[:space:]]*(ControllerMode[[:space:]]*=).*/\1 le/' /etc/bluetooth/main.conf"
+      run "sed -i -E 's/^[#[:space:]]*(Experimental[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+      run "sed -i -E 's/^[#[:space:]]*(FastConnectable[[:space:]]*=).*/\1 false/' /etc/bluetooth/main.conf"
+      run "sed -i -E 's/^[#[:space:]]*(MinAdvertisementInterval[[:space:]]*=).*/\1 100/' /etc/bluetooth/main.conf"
+      run "sed -i -E 's/^[#[:space:]]*(MaxAdvertisementInterval[[:space:]]*=).*/\1 150/' /etc/bluetooth/main.conf"
+    fi
+
+    say "Re-applying bluetoothd drop-in (--experimental + plugin trim)"
+    BTD_PATH=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
+    [[ -z "${BTD_PATH}" ]] && BTD_PATH=/usr/libexec/bluetooth/bluetoothd
+    mkdir -p /etc/systemd/system/bluetooth.service.d
+    BTD_NOPLUGIN=midi,sap,input,hog,a2dp,avrcp,audio,hsp,hfp,pbap,map,obex,network,health,wiimote
+    cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<EOF
+[Service]
+ExecStart=
+ExecStart=${BTD_PATH} --experimental --noplugin=${BTD_NOPLUGIN}
+EOF
+
     RELOAD_SYSTEMD=1
   fi
 

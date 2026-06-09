@@ -1,5 +1,7 @@
 #!/bin/bash
 
-sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency 434.925 --ctcss 250.3,0 --tail close --squelch 8
-sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable
-sa818 --port /dev/ttyAMA0 volume --level 1
+# /dev/serial0 = whichever UART is wired to GPIO 14/15 (PL011 when BT is
+# disabled, mini-UART when BT is enabled). Works on every Pi OS kernel.
+sa818 --port /dev/serial0 radio --bw 0 --frequency 434.925 --ctcss 250.3,0 --tail close --squelch 8
+sa818 --port /dev/serial0 filters --emphasis disable --highpass disable --lowpass disable
+sa818 --port /dev/serial0 volume --level 1

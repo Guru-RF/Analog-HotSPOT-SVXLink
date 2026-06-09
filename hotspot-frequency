@@ -20,6 +20,21 @@ CPVOL=$(grep -m1 'sa818 .* volume' /usr/sbin/hotspot | sed -n 's/.*--level \([^ 
 # Extract full --ctcss parameter (exactly as written)
 CTCSS=$(grep -m1 'sa818 .* radio' /usr/sbin/hotspot | sed -n 's/.*\(--ctcss [^ ]*\).*/\1/p')
 
+# Preserve the install-time --port and the full filter line so re-running
+# hotspot-frequency doesn't clobber what hotspot-config-online chose
+# (in particular: 4th-gen boards keep their chip-side filters enabled).
+SERIAL_PORT=$(grep -m1 'sa818 .* radio' /usr/sbin/hotspot | sed -n 's/.*--port \([^ ]*\).*/\1/p')
+if [[ -z "${SERIAL_PORT}" ]]; then
+  if   [ -e /dev/serial0 ]; then SERIAL_PORT="/dev/serial0"
+  elif [ -e /dev/ttyAMA0 ]; then SERIAL_PORT="/dev/ttyAMA0"
+  else SERIAL_PORT="/dev/ttyS0"
+  fi
+fi
+FILTER_LINE=$(grep -m1 'sa818 .* filters' /usr/sbin/hotspot)
+if [[ -z "${FILTER_LINE}" ]]; then
+  FILTER_LINE="sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable"
+fi
+
 gum style --border normal --margin "1" --padding "1 2" \
   --border-foreground "#04B575" \
   "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Frequency"
@@ -35,9 +50,9 @@ say "Configuring hotspot"
 {
   echo "#!/bin/bash"
   echo ""
-  echo "sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency ${FREQ} ${CTCSS} --squelch 8"
-  echo "sa818 --port /dev/ttyAMA0 filters --emphasis disable --highpass disable --lowpass disable"
-  echo "sa818 --port /dev/ttyAMA0 volume --level ${CPVOL}"
+  echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} ${CTCSS} --squelch 8"
+  echo "${FILTER_LINE}"
+  echo "sa818 --port ${SERIAL_PORT} volume --level ${CPVOL}"
 } > /usr/sbin/hotspot
 
 chmod +x /usr/sbin/hotspot

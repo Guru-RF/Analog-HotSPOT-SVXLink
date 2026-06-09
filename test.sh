@@ -3,9 +3,9 @@
 # curl -fsSL https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/refs/heads/main/test.sh | sudo bash
 
 systemctl stop svxlink
-sa818 --port /dev/ttyAMA0 radio --bw 0 --frequency 434.925 --ctcss 250.3,0 --squelch 8
-sa818 --port /dev/ttyAMA0 filters --emphasis enable --highpass enable --lowpass enable
-sa818 --port /dev/ttyAMA0 volume --level 1
+sa818 --port /dev/serial0 radio --bw 0 --frequency 434.925 --ctcss 250.3,0 --squelch 8
+sa818 --port /dev/serial0 filters --emphasis enable --highpass enable --lowpass enable
+sa818 --port /dev/serial0 volume --level 1
 # audio to radio Module
 amixer set 'Headphone' 75%
 # audio from radio Module

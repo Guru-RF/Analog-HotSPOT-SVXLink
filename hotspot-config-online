@@ -17,8 +17,14 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
-# Detect available serial port (prefer /dev/ttyAMA0, fall back to /dev/ttyS0)
-if [ -e /dev/ttyAMA0 ]; then
+# Detect the serial port the SA818 is wired to. Prefer /dev/serial0 — the
+# kernel-maintained symlink to whatever UART is on GPIO 14/15, regardless
+# of whether BT is installed (which steals PL011) or whether the kernel
+# renamed ttyAMA0 to ttyAMA10 (Pi 5 / newer device-tree). ttyAMA0 / ttyS0
+# stay as fallbacks for ancient images where the serial0 alias is missing.
+if [ -e /dev/serial0 ]; then
+  SERIAL_PORT="/dev/serial0"
+elif [ -e /dev/ttyAMA0 ]; then
   SERIAL_PORT="/dev/ttyAMA0"
 else
   SERIAL_PORT="/dev/ttyS0"

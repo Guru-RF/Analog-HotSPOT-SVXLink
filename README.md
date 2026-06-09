@@ -233,18 +233,20 @@ sudo tail -f /var/log/svxlink
 
     DTMF 91<TALKGROUP>#
 
-This is the **recommended way** to switch talkgroups. It works at any
-moment — even while the network is busy — and it doesn't disturb anyone
-else on the air:
+This is the **recommended over-the-air way** to switch talkgroups. It
+doesn't disturb anyone else and it doesn't require being on TG0 first:
 
 - **DTMF digits are muted at the hotspot** (svxlink's `DTMF_MUTING=1` in
   `[Rx1]`), so the network never hears your tones. You can't accidentally
   send a DTMF burst into someone's QSO.
-- **No wait for traffic to end.** Send the sequence whenever it's
-  convenient; the switch happens locally and the next time you key up
-  you're on the new TG.
 - **No requirement to be on TG0 first.** `91<TG>#` jumps straight from
   whichever talkgroup you're currently on.
+
+You do still need a quiet moment to key your radio: the hotspot is
+**half-duplex**, so while it's transmitting (relaying audio from the
+network out over RF) you can't push DTMF into it. Wait for the hotspot
+to stop transmitting, then send the sequence — the switch happens locally
+and the next time you key up you're on the new TG.
 
 Examples:
 
@@ -254,6 +256,20 @@ Examples:
 | Switch to TG 9000 | `919000#` |
 | Return to TG 0 (parking) | `910#` |
 | Temporarily monitor another TG for one hour | `94<TG>#` (e.g. `9423#`) |
+
+## Switching during active traffic — portal / Bluetooth app
+
+If you want to switch *while* the hotspot is busy relaying a QSO (so you
+can't get DTMF in over the air), use one of the out-of-band channels —
+neither touches the radio:
+
+- **Bluetooth companion app** (preferred). Tap the talkgroup in the app
+  and you're switched immediately, even mid-traffic. See the
+  [Installing Bluetooth](#installing-bluetooth-for-the-hotspot-companion-app)
+  section for the install and the two app variants
+  (SvxPortalApp for Belgian users, Analog-HotSPOT-App standalone).
+- **Local web portal** at `http://hotspot.local` (or the announced IP) —
+  one click per talkgroup.
 
 ## Alternative: CTCSS tone mapping (software-CTCSS chips only)
 
@@ -266,11 +282,11 @@ you'll hear a bleep tone 15 seconds after a QSO ended, that's your cue.
 Once it switches it's instant – no double presses like before, you can
 start speaking immediately.
 
-Caveats vs DTMF: you have to wait for a quiet moment, and you have to
-remember the tone-to-TG mapping. It's also unavailable on SA818PRO
-hotspots (no software CTCSS decode — see
+Caveats vs DTMF: you have to be on TG0 first, you have to remember the
+tone-to-TG mapping, and it's unavailable on SA818PRO hotspots (no
+software CTCSS decode — see
 [CTCSS Talkgroup Mapping](#ctcss-talkgroup-mapping)). DTMF works on
-every chip and every network state, so prefer DTMF.
+every chip from any TG, so prefer DTMF over CTCSS.
 
 ---
 

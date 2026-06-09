@@ -384,7 +384,7 @@ proc talker_start {tg callsign} {
 #	spellWord "$callsign"
 #	#CW::play "$callsign" 210 1000 -25
 #    }
-  }
+#  }
 }
 
 

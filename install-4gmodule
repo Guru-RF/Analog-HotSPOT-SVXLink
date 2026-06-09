@@ -35,91 +35,97 @@ spin_run() {
 
 INSTALLER_NAME="sudo /usr/sbin/install-4gmodule"
 
-# Refuse to install on a not-fully-updated OR not-yet-rebooted OS — a
-# kernel/libc upgrade left half-applied would put userspace and modules
-# out of sync, and modem drivers often need the post-upgrade reboot to
-# work properly.
-ensure_os_ready() {
-  say "Checking for pending OS updates — this can take up to a minute on a fresh image or when unattended-upgrades is running in the background. Please wait..."
+# Consolidated prereq gate: check OS-update state in one pass and bail
+# with ONE message listing everything the user needs to do — so they go
+# through one apt-upgrade + one reboot cycle instead of bouncing through
+# multiple stops. (Structurally identical to install-bluetooth.sh's
+# equivalent — 4G doesn't have BT-subsystem auto-fixes, so AUTOFIXED is
+# omitted here but the shape stays consistent.)
+ensure_ready_to_install() {
+  say "Checking install prerequisites — this can take up to a minute on a fresh image or when unattended-upgrades is running in the background. Please wait..."
+
+  local -a BLOCKERS=()
+  local APT_UPGRADE_NEEDED=0
+  local REBOOT_NEEDED=0
 
   # apt-get update can stall when another apt process holds the lock
   # (unattended-upgrades is the common culprit) or a mirror is slow.
-  # Cap at 30s and fall back to the cached package list rather than
-  # hanging forever.
+  # Cap at 30s and fall back to the cached package list rather than hang.
   if ! spin_run "Refreshing apt cache (up to 30s)" timeout 30 apt-get update -qq; then
     say "WARNING: apt update did not complete in 30s (offline, slow mirror, or another apt holds the lock — try 'sudo fuser /var/lib/dpkg/lock-frontend'). Continuing with the cached package list."
   fi
 
-  # 1) Pending package upgrades? The simulation against the cache is
-  # the bit that's actually slow on a heavily-pending box (107+
-  # packages). Run in the background so we can spin, then read result.
+  # The cache-side simulation is the bit that's actually slow on a heavily
+  # -pending box (100+ packages). Capture to tmpfile so we keep the head-10
+  # listing for the report.
   local upgrade_out
   upgrade_out=$(mktemp)
   spin_run "Computing pending package list" bash -c "apt-get -s upgrade >'${upgrade_out}' 2>/dev/null"
+  local PENDING
   PENDING=$(grep -c '^Inst ' "${upgrade_out}")
   if [[ "${PENDING}" -gt 0 ]]; then
-    say ""
-    say "STOP — there are ${PENDING} pending package upgrade(s)."
-    say "Please run, in order:"
-    say ""
-    say "    sudo apt -y update && sudo apt -y upgrade"
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    say ""
-    say "First 10 pending packages:"
-    grep '^Inst ' "${upgrade_out}" | head -10 | sed 's/^Inst /  - /'
-    if [[ "${PENDING}" -gt 10 ]]; then
-      say "  ... and $((PENDING - 10)) more"
-    fi
-    rm -f "${upgrade_out}"
-    exit 1
+    BLOCKERS+=("${PENDING} package upgrade(s) pending")
+    APT_UPGRADE_NEEDED=1
+    # Pending upgrades likely include a kernel — always pair with a reboot.
+    REBOOT_NEEDED=1
   fi
-  rm -f "${upgrade_out}"
 
-  # 2) Pending reboot signal from update-notifier-common / unattended-upgrades?
   if [[ -f /var/run/reboot-required ]]; then
-    say ""
-    say "STOP — the system applied updates that require a reboot first."
-    say "(/var/run/reboot-required is present)"
-    say ""
-    say "Please run:"
-    say ""
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    exit 1
+    BLOCKERS+=("/var/run/reboot-required present (system applied updates that need a reboot)")
+    REBOOT_NEEDED=1
   fi
 
-  # 3) Installed kernel newer than the one currently running?
+  local RUNNING_KERNEL LATEST_KERNEL
   RUNNING_KERNEL=$(uname -r)
   # Filter out the `-unsigned` flavour: Pi OS installs both the signed
   # (booted) and unsigned (not booted) kernel packages with the same
   # version, and `sort -V` would otherwise pick the unsigned name as
-  # "newest" purely because "unsigned" sorts after the empty suffix —
-  # producing a false-positive "reboot needed" right after a fresh boot.
+  # "newest" purely because "unsigned" sorts after the empty suffix.
   LATEST_KERNEL=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 2>/dev/null \
                   | grep -E '^linux-image-[0-9]' \
                   | grep -v -- '-unsigned$' \
                   | sed 's/^linux-image-//' \
                   | sort -V | tail -n1)
   if [[ -n "${LATEST_KERNEL}" && "${LATEST_KERNEL}" != "${RUNNING_KERNEL}" ]]; then
-    say ""
-    say "STOP — running kernel (${RUNNING_KERNEL}) is older than the installed kernel (${LATEST_KERNEL})."
-    say "A reboot is needed before installing."
-    say ""
-    say "Please run:"
-    say ""
-    say "    sudo reboot"
-    say ""
-    say "and then re-run:  ${INSTALLER_NAME}"
-    exit 1
+    BLOCKERS+=("running kernel (${RUNNING_KERNEL}) is older than installed kernel (${LATEST_KERNEL})")
+    REBOOT_NEEDED=1
   fi
 
-  say "OS is up to date and current kernel is running"
+  if (( ${#BLOCKERS[@]} == 0 )); then
+    say "All prerequisites satisfied — proceeding with install"
+    rm -f "${upgrade_out}"
+    return 0
+  fi
+
+  say ""
+  say "STOP — the system isn't ready to install the 4G module yet."
+  say ""
+  say "Issues you need to address:"
+  local b
+  for b in "${BLOCKERS[@]}"; do say "  - ${b}"; done
+  say ""
+  if (( APT_UPGRADE_NEEDED )); then
+    say "First 10 pending packages:"
+    grep '^Inst ' "${upgrade_out}" | head -10 | sed 's/^Inst /  - /'
+    if [[ "${PENDING}" -gt 10 ]]; then
+      say "  ... and $((PENDING - 10)) more"
+    fi
+    say ""
+  fi
+  say "Recovery — run these in order:"
+  say ""
+  if (( APT_UPGRADE_NEEDED )); then
+    say "    sudo apt -y update && sudo apt -y upgrade"
+  fi
+  if (( REBOOT_NEEDED )); then
+    say "    sudo reboot"
+  fi
+  say "    ${INSTALLER_NAME}"
+  rm -f "${upgrade_out}"
+  exit 0
 }
 
-ensure_os_ready
+ensure_ready_to_install
 
 say "Installing Prerequisites"
 run "apt -y install libqmi-utils udhcpc"

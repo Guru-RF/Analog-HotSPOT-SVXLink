@@ -273,7 +273,7 @@ if [ "${BAND}" = "70cm" ]; then
 fi
 
 if [ "${BAND}" = "2m" ]; then
-  DEF_FREQ_2M="145.926"
+  DEF_FREQ_2M="145.925"
 
   if [[ -z "${OLDFREQ}" ]]; then
     OLDFREQ="${DEF_FREQ_2M}"

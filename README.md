@@ -580,6 +580,45 @@ Two flavours are available there:
 
 ---
 
+# Running multiple hotspots / companion-app devices
+
+**Q: I have more than one hotspot — or I want to run the companion app
+on my phone, my tablet, and my Mac at the same time. Can they all use
+my callsign?**
+
+Yes — but **every connection to the SVXLink reflector needs a unique
+callsign**. Two devices presenting the exact same callsign will collide
+on the reflector and only one of them will stay connected at any given
+moment.
+
+The fix is a short suffix after a hyphen — up to 4 characters, your
+choice. Example layout for `OR7F`:
+
+| Device | Callsign |
+| --- | --- |
+| Hotspot (4G variant) | `OR7F-T4` |
+| Hotspot (home / Wi-Fi) | `OR7F-HOME` |
+| iPhone — companion app | `OR7F-IPHO` |
+| iPad — companion app | `OR7F-IPAD` |
+| Android (XCover) | `OR7F-XVCR` |
+| Mac desktop app | `OR7F-OSX` |
+
+Where to set it per device:
+
+- **Hotspot**: re-run `sudo hotspot-config` and edit the
+  *SVXLINK Reflector User Callsign* prompt. The value goes into
+  `[ReflectorLogic] CALLSIGN=` in `/etc/svxlink/svxlink.conf`.
+- **Companion app** (SvxPortalApp or Analog-HotSPOT-App): the app has
+  its own callsign / SSID field in settings — change it there per
+  device.
+
+The base callsign (`OR7F` above) stays the same across all of them; only
+the suffix differs. Reflector logs will show each device as a separate
+node and other operators just see your base callsign in the talker
+list.
+
+---
+
 # Modify Talkgroups on the Dashboard
 
 Edit base talkgroups:

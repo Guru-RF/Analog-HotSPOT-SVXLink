@@ -402,8 +402,7 @@ neither touches the radio:
 - **Bluetooth companion app** (preferred). Tap the talkgroup in the app
   and you're switched immediately, even mid-traffic. See the
   [Installing Bluetooth](#installing-bluetooth-for-the-hotspot-companion-app)
-  section for the install and the two app variants
-  (SvxPortalApp for Belgian users, Analog-HotSPOT-App standalone).
+  section for the install and the Analog-HotSPOT-App.
 - **Local web portal** at `http://hotspot.local` (or the announced IP) —
   one click per talkgroup.
 
@@ -472,8 +471,7 @@ Example for TG23:
 >
 > - **DTMF**: `91<TG>#` to activate a talkgroup, `910#` to return to TG0
 > - **Local portal** (`http://hotspot.local`): one click per talkgroup
-> - **Bluetooth companion app** (Belgian: SvxPortalApp, standalone:
->   Analog-HotSPOT-App) — see the
+> - **Bluetooth companion app** (Analog-HotSPOT-App) — see the
 >   [Installing Bluetooth](https://github.com/Guru-RF/Analog-HotSPOT-SVXLink#installing-bluetooth-for-the-hotspot-companion-app)
 >   section.
 >
@@ -568,15 +566,9 @@ Android, iPhone, iPad** — are linked from the central download portal:
 
 <https://svxlink-hotspot.app>
 
-Two flavours are available there:
-
-- **SvxPortalApp** — for users on the Belgian reflector. Integrates
-  deeply with the reflector (map, live talker list, …) and needs extra
-  software on the reflector side. For non-Belgian reflectors, get in
-  touch if you'd like to deploy the reflector-side component.
-- **Analog-HotSPOT-App** — standalone, works against any hotspot over
-  BLE with no reflector-side dependency. Has no map and you need to
-  define the talkgroups manually.
+**Analog-HotSPOT-App** — standalone, works against any hotspot over
+BLE with no reflector-side dependency. Talkgroups are defined by the
+hotspot itself (`MONITOR_TGS`) and pushed to the app over the BLE feed.
 
 ---
 
@@ -617,12 +609,12 @@ appears with its **full** callsign including the suffix
 (e.g. `OR7F-LTE`), so pick suffixes you're OK with being visible to
 everyone on the network.
 
-**Companion apps don't need their own callsign.** SvxPortalApp /
-Analog-HotSPOT-App talk to a hotspot over BLE and just remote-control
-it — they appear on the reflector under whatever callsign the hotspot
-itself is using. You can run the app on as many of your devices
-(phone, tablet, Mac, …) as you like simultaneously without any
-reflector-side collision.
+**The companion app doesn't need its own callsign.** Analog-HotSPOT-App
+talks to a hotspot over BLE and just remote-controls it — connections
+to the reflector all come from the hotspot itself under its configured
+callsign. You can run the app on as many of your devices (phone,
+tablet, Mac, …) as you like simultaneously without any reflector-side
+collision.
 
 ---
 

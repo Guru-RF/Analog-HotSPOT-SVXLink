@@ -586,26 +586,35 @@ Two flavours are available there:
 4G one for the road. Can they all use my callsign?**
 
 Yes — but **each hotspot needs its own unique callsign on the
-reflector**. The SVXLink reflector tracks connections by callsign, so
-two hotspots presenting the exact same callsign will collide and only
-one of them stays connected at any given moment.
+reflector**. The reason isn't a simple name clash: SVXReflector
+authenticates every connection with a **per-callsign certificate**, and
+only one client can be logged in with that certificate at a time. Two
+hotspots configured with the same callsign would be trying to use the
+same certificate, and the reflector will refuse the second login (or
+kick the first one off, depending on how the sysop configured it).
 
 The fix is a short suffix after a hyphen — up to 4 characters, your
 choice. Example layout for `OR7F`:
 
 | Hotspot | Callsign |
 | --- | --- |
-| 4G variant (mobile) | `OR7F-T4` |
+| 4G variant (mobile) | `OR7F-LTE` |
 | Home / Wi-Fi box | `OR7F-HOME` |
 | Car install | `OR7F-CAR` |
 
-Set it via `sudo hotspot-config` on each hotspot, at the
+For each unique callsign you'll need to **request a separate
+certificate signing** from your reflector sysop — the cert is bound to
+the callsign, so a new callsign means a new cert. Plan the suffixes
+before you ask, so the sysop only has to sign once per box rather than
+chasing your edits.
+
+Set the callsign via `sudo hotspot-config` on each hotspot, at the
 *SVXLINK Reflector User Callsign* prompt. The value lands in
 `[ReflectorLogic] CALLSIGN=` in `/etc/svxlink/svxlink.conf`.
 
 What other operators see: on the reflector talker list each hotspot
 appears with its **full** callsign including the suffix
-(e.g. `OR7F-T4`), so pick suffixes you're OK with being visible to
+(e.g. `OR7F-LTE`), so pick suffixes you're OK with being visible to
 everyone on the network.
 
 **Companion apps don't need their own callsign.** SvxPortalApp /

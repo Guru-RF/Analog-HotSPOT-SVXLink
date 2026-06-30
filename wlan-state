@@ -1,44 +1,28 @@
 #!/bin/bash
-# /usr/sbin/wlan-state — combo-chip-friendly wlan0 up/down for the 4G stack.
+# /usr/sbin/wlan-state — centralised wlan0 up/down for the 4G stack.
 #
-# On the BCM combo chips (Pi Zero 2W BCM43430A1 and friends), the BT side
-# of the radio refuses to register LE advertisements when wlan0 has been
-# ip-link-down'd. That cripples the hotspot-bluetooth GATT server on any
-# 4G hotspot where install-bluetooth has also been run.
+# Used by disable-wlan.service, hotspot-4g (success path) and
+# hotspot-4g-monitor (bring_wlan_{up,down}). Keeps the three call sites
+# consistent and stops AccessPopup alongside the netdev so it doesn't
+# pointlessly try to broadcast an AP while 4G is the active uplink.
 #
-# This helper centralises the up/down decision:
-#   - When BT is installed (marker: /usr/sbin/hotspot-bluetooth exists)
-#     we KEEP wlan0 up at the netdev layer and only stop user-space
-#     AccessPopup so wlan0 isn't broadcasting an AP we don't want. The
-#     combo chip stays in a state BT advertising is happy with.
-#   - When BT is NOT installed we fall back to the original behaviour
-#     (`ip link set wlan0 down`) — frees the radio, saves a little
-#     power, lets the user truly disable Wi-Fi while 4G is the uplink.
-#
-# Consumed by: disable-wlan.service, hotspot-4g (success path),
-# hotspot-4g-monitor (bring_wlan_{up,down}).
+# Historical note: an earlier revision tried to keep the netdev UP when
+# BT was installed, under the (incorrect) theory that the BCM combo chip
+# couldn't advertise BLE with wlan0 down. The real cause was a Synaptics
+# firmware blob refusing MGMT_OP_ADD_EXT_ADV_DATA — fixed in
+# hotspot-bluetooth by calling btmgmt's legacy add-adv directly. wlan0
+# can safely go fully down even with BT installed; verified live.
 
 set -u
 
 action="${1:-}"
-BT_INSTALLED=0
-[ -f /usr/sbin/hotspot-bluetooth ] && BT_INSTALLED=1
 
 case "$action" in
   down)
-    # AccessPopup off either way: don't want it broadcasting an AP while
-    # 4G is carrying the traffic. Idempotent; no-op if not a unit.
     systemctl stop accesspopup.service 2>/dev/null || true
-    if [ "$BT_INSTALLED" -eq 0 ]; then
-      ip link set wlan0 down 2>/dev/null || true
-    fi
-    # BT_INSTALLED=1 → leave the netdev up; combo chip stays happy.
+    ip link set wlan0 down 2>/dev/null || true
     ;;
   up)
-    # Bring the netdev up (no-op if already up) and try-restart
-    # AccessPopup so it re-evaluates against the now-active state.
-    # AP fallback comes back automatically when no known Wi-Fi is in
-    # range.
     ip link set wlan0 up 2>/dev/null || true
     systemctl try-restart accesspopup.service 2>/dev/null || true
     ;;

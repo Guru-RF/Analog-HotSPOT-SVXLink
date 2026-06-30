@@ -225,28 +225,6 @@ run "chmod +x /usr/sbin/hotspot-bluetooth"
 say "Downloading hotspot-bluetooth.service"
 run "wget -O /etc/systemd/system/hotspot-bluetooth.service $RAW/hotspot-bluetooth.service"
 
-# 4G + BT combo-chip workaround: install-4gmodule's old disable-wlan
-# brings wlan0 down at the netdev layer, which on the BCM43430A1
-# combo radio kills BT LE advertising (RegisterAdvertisement returns
-# Failed). Refresh the 4G-stack files that have wlan-handling baked in,
-# so they use the BT-aware /usr/sbin/wlan-state helper that keeps the
-# netdev up when BT is installed. Idempotent; only fires when 4G is
-# already installed.
-if [[ -f /usr/sbin/hotspot-4g ]]; then
-  say "4G stack detected — refreshing wlan-handling files (combo-chip BT fix)"
-  run "wget -O /usr/sbin/wlan-state $RAW/wlan-state"
-  run "chmod +x /usr/sbin/wlan-state"
-  run "wget -O /usr/sbin/hotspot-4g $RAW/hotspot-4g"
-  run "chmod +x /usr/sbin/hotspot-4g"
-  run "wget -O /usr/sbin/hotspot-4g-monitor $RAW/hotspot-4g-monitor"
-  run "chmod +x /usr/sbin/hotspot-4g-monitor"
-  run "wget -O /etc/systemd/system/disable-wlan.service $RAW/disable-wlan.service"
-  # If the timer already fired before we updated the unit, wlan0 is
-  # currently down at netdev level — bring it back up now so BT can
-  # register its advertisement this run.
-  run "/usr/sbin/wlan-state up"
-fi
-
 say "Enable and start hotspot-bluetooth"
 run "systemctl daemon-reload"
 run "systemctl enable hotspot-bluetooth"

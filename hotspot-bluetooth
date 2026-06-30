@@ -992,8 +992,10 @@ def main():
     # same content) rejects with "Invalid Parameters (0x0d)". Use legacy
     # MGMT_OP_ADD_ADVERTISING via the btmgmt tool instead.
     #
-    # btmgmt flags (per BlueZ client/mgmt.c cmd_add_adv() — beware: `-d`
-    # is RAW DATA bytes, not discoverable; the discoverable flag is `-g`):
+    # btmgmt flags (per BlueZ client/mgmt.c cmd_add_adv() — every flag is
+    # boolean; `-d <data>` is RAW DATA bytes (not discoverable); `-n` is
+    # the local-name-in-scan-response boolean (NOT a name argument — the
+    # name itself comes from the adapter's Alias):
     #   -c   MGMT_ADV_FLAG_CONNECTABLE — peripheral mode, uses public BD_ADDR
     #        (no LE Set Random Address call which the firmware can refuse).
     #   -g   MGMT_ADV_FLAG_DISCOV — kernel prepends the Flags AD record
@@ -1001,26 +1003,25 @@ def main():
     #        Supported). Without it, iOS/macOS Core Bluetooth silently
     #        filters us out AND Android can pair but not finish the
     #        post-pair connect — confirmed live.
-    #   -n   short LocalName (3 + 18 + 2+N ≤ 31 → N ≤ 8; local_name()
-    #        truncates to MAX_LOCAL_NAME = 8).
+    #   -n   MGMT_ADV_FLAG_LOCAL_NAME — kernel puts the adapter's Alias
+    #        into the SCAN RESPONSE (not the primary AD), so the 31-byte
+    #        primary stays just Flags(3)+UUID(18)=21 B and the name has
+    #        the full 31-byte scan-response budget.
     #   -u   our GATT service UUID, advertised so apps can scan-filter.
-    AD_NAME = local_name()  # already truncated to MAX_LOCAL_NAME = 8
-
     def _register_adv_via_btmgmt():
         import subprocess
         try:
             r = subprocess.run(
                 ["btmgmt", "add-adv",
-                 "-c", "-g",
-                 "-n", AD_NAME,
+                 "-c", "-g", "-n",
                  "-u", DTMF_SVC_UUID,
                  "1"],
                 capture_output=True, text=True, timeout=5,
             )
             if r.returncode == 0:
-                log.info("Advertising as %s (via btmgmt legacy adv, connectable+discoverable)", AD_NAME)
+                log.info("Advertising as %s (via btmgmt legacy adv, connectable+discoverable)", socket.gethostname())
             else:
-                log.error("btmgmt add-adv failed: %s", (r.stderr or r.stdout).strip())
+                log.error("btmgmt add-adv failed: %s", (r.stderr or r.stdout).strip() or "(no output)")
                 mainloop.quit()
         except Exception as exc:
             log.error("btmgmt add-adv error: %r", exc)

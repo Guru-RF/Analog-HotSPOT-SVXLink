@@ -846,9 +846,27 @@ def register_agent(bus):
     return agent
 
 
+# Maximum LocalName length that keeps our primary BLE advertising data
+# under the 31-byte legacy cap. The BCM combo chips on the Pi (BCM43430A1
+# on the Zero 2W and similar) silently enforce that cap even when BlueZ
+# uses Extended Advertising, so anything longer makes BlueZ return:
+#
+#   Add Extended Advertising Data (0x0055)
+#   Status: Invalid Parameters (0x0d)
+#
+# Math for our advertisement (Flags + one 128-bit ServiceUUID + LocalName):
+#   31 (cap) - 3 (Flags AD) - 18 (128-bit ServiceUUID AD: 2 hdr + 16 data)
+#            - 2 (LocalName AD header) = 8 bytes for the name itself.
+#
+# Hostnames longer than 8 chars get truncated in the advertised name;
+# clients can read the full hostname via the GATT Device Information
+# service if they care.
+MAX_LOCAL_NAME = 8
+
+
 def local_name():
     try:
-        return socket.gethostname()[:20]
+        return socket.gethostname()[:MAX_LOCAL_NAME]
     except Exception:
         return "hotspot"
 

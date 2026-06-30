@@ -135,8 +135,12 @@ for attempt in $(seq 1 $MAX_ATTEMPTS); do
     log "online"
     /usr/sbin/hotspot_dtmf "D912#"
     if ip link show wlan0 >/dev/null 2>&1; then
-      log "disabling wlan0 until next reboot"
-      ip link set wlan0 down 2>/dev/null || true
+      # wlan-state is BT-aware: on combo chips with BT installed it
+      # leaves the netdev up (so BT advertising stays alive) and just
+      # stops AccessPopup. On non-BT boxes it ip-link-down's wlan0.
+      log "disabling wlan0 (via wlan-state)"
+      /usr/sbin/wlan-state down 2>/dev/null \
+        || ip link set wlan0 down 2>/dev/null || true
     fi
     exit 0
   fi
@@ -145,10 +149,11 @@ done
 
 log "giving up after $MAX_ATTEMPTS attempts"
 # Make sure wlan0 is back UP before we exit — otherwise the user is
-# locked out (no 4G, no Wi-Fi). Idempotent: no-op if already up.
+# locked out (no 4G, no Wi-Fi). wlan-state up brings the netdev up and
+# try-restarts AccessPopup so the AP-fallback re-applies.
 if ip link show wlan0 >/dev/null 2>&1; then
   log "bringing wlan0 back UP so the box stays reachable"
-  ip link set wlan0 up 2>/dev/null || true
-  systemctl try-restart accesspopup.service 2>/dev/null || true
+  /usr/sbin/wlan-state up 2>/dev/null \
+    || ip link set wlan0 up 2>/dev/null || true
 fi
 exit 1

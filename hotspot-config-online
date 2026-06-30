@@ -646,6 +646,16 @@ EOF
     RELOAD_SYSTEMD=1
   fi
 
+  # wlan-state is the BT-aware wlan0 up/down helper used by the 4G
+  # stack. Only relevant if 4G is installed.
+  if [ -f /usr/sbin/hotspot-4g ]; then
+    say "Updating wlan-state + disable-wlan.service (combo-chip BT fix)"
+    run "wget -O /usr/sbin/wlan-state https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/wlan-state > /dev/null 2>&1"
+    run "chmod +x /usr/sbin/wlan-state"
+    run "wget -O /etc/systemd/system/disable-wlan.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/disable-wlan.service > /dev/null 2>&1"
+    RELOAD_SYSTEMD=1
+  fi
+
   if [ "$RELOAD_SYSTEMD" = "1" ]; then
     run "systemctl daemon-reload"
   fi

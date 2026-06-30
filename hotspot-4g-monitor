@@ -18,27 +18,36 @@ MONITOR_PING_TIMEOUT=5
 log() { echo "[$(date +%H:%M:%S)] $*"; }
 
 # Bring wlan0 back up when 4G has failed, so the user keeps an access
-# path (AccessPopup AP / known Wi-Fi) instead of being locked out. Tries
-# to also kick AccessPopup if it's installed, so it re-applies its AP /
-# scan logic against the freshly-up interface.
+# path (AccessPopup AP / known Wi-Fi) instead of being locked out.
+# Delegated to /usr/sbin/wlan-state — it's BT-aware and reverses
+# whatever bring_wlan_down did. Falls back to raw ip link if the helper
+# isn't installed yet (older deployments).
 bring_wlan_up() {
-  if ip link show wlan0 >/dev/null 2>&1; then
-    if ip -o link show wlan0 | grep -q ' state DOWN '; then
-      log "bringing wlan0 back UP (4G access gone, restoring fallback)"
-      ip link set wlan0 up 2>/dev/null || log "ip link set wlan0 up failed"
-      systemctl try-restart accesspopup.service 2>/dev/null || true
-    fi
+  if ! ip link show wlan0 >/dev/null 2>&1; then
+    return
+  fi
+  log "bringing wlan0 back UP (4G access gone, restoring fallback)"
+  if [[ -x /usr/sbin/wlan-state ]]; then
+    /usr/sbin/wlan-state up || log "wlan-state up failed"
+  else
+    ip link set wlan0 up 2>/dev/null || log "ip link set wlan0 up failed"
+    systemctl try-restart accesspopup.service 2>/dev/null || true
   fi
 }
 
-# Take wlan0 back down once 4G is healthy again (we previously brought it
-# up to give the user a fallback during an outage).
+# Take wlan0 back down once 4G is healthy again. Delegated to
+# /usr/sbin/wlan-state — on combo chips with BT installed it stops
+# AccessPopup but keeps the netdev up; without BT it ip-link-downs as
+# before. Falls back to raw ip link on older deployments.
 bring_wlan_down() {
-  if ip link show wlan0 >/dev/null 2>&1; then
-    if ip -o link show wlan0 | grep -q ' state UP '; then
-      log "bringing wlan0 back DOWN (4G recovered)"
-      ip link set wlan0 down 2>/dev/null || log "ip link set wlan0 down failed"
-    fi
+  if ! ip link show wlan0 >/dev/null 2>&1; then
+    return
+  fi
+  log "bringing wlan0 back DOWN (4G recovered)"
+  if [[ -x /usr/sbin/wlan-state ]]; then
+    /usr/sbin/wlan-state down || log "wlan-state down failed"
+  else
+    ip link set wlan0 down 2>/dev/null || log "ip link set wlan0 down failed"
   fi
 }
 

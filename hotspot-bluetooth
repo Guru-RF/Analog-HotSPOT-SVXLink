@@ -847,13 +847,18 @@ def power_on_adapter(bus, adapter_path):
         raise last_err
 
     # Let Android's eager-bonding stack succeed at pairing (see JustWorksAgent).
-    # PairableTimeout=0 means "always pairable"; the adapter isn't BR/EDR-
-    # discoverable (ControllerMode=le) so this only affects LE bonds.
+    # PairableTimeout=0 means "always pairable". Discoverable=True ensures
+    # the adapter accepts incoming LE connections cleanly (some Android +
+    # iOS stacks abort the post-pair connection if the adapter isn't in
+    # discoverable mode, confirmed live). DiscoverableTimeout=0 disables
+    # the timeout. ControllerMode=le means none of this affects BR/EDR.
     try:
         props.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(True))
         props.Set(ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(0))
+        props.Set(ADAPTER_IFACE, "Discoverable", dbus.Boolean(True))
+        props.Set(ADAPTER_IFACE, "DiscoverableTimeout", dbus.UInt32(0))
     except dbus.exceptions.DBusException as e:
-        log.warning("Could not set Pairable on adapter: %s", e)
+        log.warning("Could not set Pairable/Discoverable on adapter: %s", e)
 
     # Adapter Alias = hostname. BlueZ exposes this through the GATT
     # Generic Access Service / Device Name characteristic (0x2A00), so
@@ -982,19 +987,38 @@ def main():
         error_handler=lambda e: (log.error("RegisterApplication: %s", e), mainloop.quit()),
     )
     # WORKAROUND: BlueZ DBus RegisterAdvertisement uses
-    # MGMT_OP_ADD_EXT_ADV_DATA which the BCM43430A1 with the recent
-    # Synaptics SYN43430A1.hcd firmware rejects with "Invalid Parameters
-    # (0x0d)". Use legacy MGMT_OP_ADD_ADVERTISING via the btmgmt tool
-    # instead — same controller accepts it fine.
+    # MGMT_OP_ADD_EXT_ADV_DATA, which the BCM43430A1 (BT 4.1, no extended-
+    # advertising support — the SYN43430A1.hcd blob is a Synaptics rename,
+    # same content) rejects with "Invalid Parameters (0x0d)". Use legacy
+    # MGMT_OP_ADD_ADVERTISING via the btmgmt tool instead.
+    #
+    # btmgmt flags (per BlueZ client/mgmt.c cmd_add_adv() — beware: `-d`
+    # is RAW DATA bytes, not discoverable; the discoverable flag is `-g`):
+    #   -c   MGMT_ADV_FLAG_CONNECTABLE — peripheral mode, uses public BD_ADDR
+    #        (no LE Set Random Address call which the firmware can refuse).
+    #   -g   MGMT_ADV_FLAG_DISCOV — kernel prepends the Flags AD record
+    #        (0x02 0x01 0x06 = LE General Discoverable + BR/EDR Not
+    #        Supported). Without it, iOS/macOS Core Bluetooth silently
+    #        filters us out AND Android can pair but not finish the
+    #        post-pair connect — confirmed live.
+    #   -n   short LocalName (3 + 18 + 2+N ≤ 31 → N ≤ 8; local_name()
+    #        truncates to MAX_LOCAL_NAME = 8).
+    #   -u   our GATT service UUID, advertised so apps can scan-filter.
+    AD_NAME = local_name()  # already truncated to MAX_LOCAL_NAME = 8
+
     def _register_adv_via_btmgmt():
         import subprocess
         try:
             r = subprocess.run(
-                ["btmgmt", "add-adv", "-c", "-u", DTMF_SVC_UUID, "1"],
+                ["btmgmt", "add-adv",
+                 "-c", "-g",
+                 "-n", AD_NAME,
+                 "-u", DTMF_SVC_UUID,
+                 "1"],
                 capture_output=True, text=True, timeout=5,
             )
             if r.returncode == 0:
-                log.info("Advertising as %s (via btmgmt legacy adv)", socket.gethostname())
+                log.info("Advertising as %s (via btmgmt legacy adv, connectable+discoverable)", AD_NAME)
             else:
                 log.error("btmgmt add-adv failed: %s", (r.stderr or r.stdout).strip())
                 mainloop.quit()

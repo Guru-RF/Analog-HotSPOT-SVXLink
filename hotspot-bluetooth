@@ -1010,6 +1010,16 @@ def main():
     #   -u   our GATT service UUID, advertised so apps can scan-filter.
     def _register_adv_via_btmgmt():
         import subprocess
+        # Defensive cleanup: a previous crashed instance can leave slot 1
+        # registered on the kernel side, and the next add-adv would then
+        # silently fail (manually it works because of the cleanup between
+        # shell invocations). Do an unconditional rm-adv first; status
+        # 0x0d "Invalid Parameters" just means "no such instance" which
+        # is the expected case on a clean start — ignore it.
+        subprocess.run(
+            ["btmgmt", "rm-adv", "1"],
+            capture_output=True, timeout=3, check=False,
+        )
         try:
             r = subprocess.run(
                 ["btmgmt", "add-adv",
@@ -1021,7 +1031,10 @@ def main():
             if r.returncode == 0:
                 log.info("Advertising as %s (via btmgmt legacy adv, connectable+discoverable)", socket.gethostname())
             else:
-                log.error("btmgmt add-adv failed: %s", (r.stderr or r.stdout).strip() or "(no output)")
+                # btmgmt sometimes prints to stdout, sometimes stderr,
+                # sometimes both. Surface all of it for diagnosis.
+                detail = ((r.stderr or "") + (r.stdout or "")).strip() or "(no output, rc=%d)" % r.returncode
+                log.error("btmgmt add-adv failed: %s", detail)
                 mainloop.quit()
         except Exception as exc:
             log.error("btmgmt add-adv error: %r", exc)

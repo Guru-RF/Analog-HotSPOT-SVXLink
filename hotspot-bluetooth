@@ -981,18 +981,42 @@ def main():
         reply_handler=lambda: log.info("GATT application registered"),
         error_handler=lambda e: (log.error("RegisterApplication: %s", e), mainloop.quit()),
     )
-    ad_manager.RegisterAdvertisement(
-        advertisement.get_path(),
-        {},
-        reply_handler=lambda: log.info("Advertising as %s", advertisement.local_name),
-        error_handler=lambda e: (log.error("RegisterAdvertisement: %s", e), mainloop.quit()),
-    )
+    # WORKAROUND: BlueZ DBus RegisterAdvertisement uses
+    # MGMT_OP_ADD_EXT_ADV_DATA which the BCM43430A1 with the recent
+    # Synaptics SYN43430A1.hcd firmware rejects with "Invalid Parameters
+    # (0x0d)". Use legacy MGMT_OP_ADD_ADVERTISING via the btmgmt tool
+    # instead — same controller accepts it fine.
+    def _register_adv_via_btmgmt():
+        import subprocess
+        try:
+            r = subprocess.run(
+                ["btmgmt", "add-adv", "-c", "-u", DTMF_SVC_UUID, "1"],
+                capture_output=True, text=True, timeout=5,
+            )
+            if r.returncode == 0:
+                log.info("Advertising as %s (via btmgmt legacy adv)", socket.gethostname())
+            else:
+                log.error("btmgmt add-adv failed: %s", (r.stderr or r.stdout).strip())
+                mainloop.quit()
+        except Exception as exc:
+            log.error("btmgmt add-adv error: %r", exc)
+            mainloop.quit()
+        return False  # one-shot idle callback
+    GLib.idle_add(_register_adv_via_btmgmt)
 
     try:
         mainloop.run()
     except KeyboardInterrupt:
         log.info("Shutting down")
     finally:
+        # Cleanup btmgmt-registered advertisement (mirror the
+        # add-adv we did at startup).
+        try:
+            import subprocess
+            subprocess.run(["btmgmt", "rm-adv", "1"],
+                           capture_output=True, timeout=3, check=False)
+        except Exception:
+            pass
         try:
             ad_manager.UnregisterAdvertisement(advertisement.get_path())
         except Exception:

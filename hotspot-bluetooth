@@ -746,11 +746,32 @@ class Advertisement(dbus.service.Object):
         dbus.service.Object.__init__(self, bus, self.path)
 
     def get_properties(self):
+        # Keep the primary advertising payload deliberately minimal: just
+        # Flags (added by BlueZ) + the 128-bit Service UUID = 21 bytes,
+        # leaving ~10 bytes of headroom under the 31-byte legacy AD cap
+        # that BCM combo chips on Pi (BCM43430A1 etc.) silently enforce
+        # even when BlueZ uses Extended Advertising.
+        #
+        # We do NOT include the LocalName here — BlueZ has been observed
+        # to auto-add TX Power / other fields and overflow the 31-byte
+        # budget with bluez 5.66 on Pi OS, returning:
+        #
+        #   Add Extended Advertising Data (0x0055)
+        #   Status: Invalid Parameters (0x0d)
+        #
+        # The device name is still discoverable: BlueZ auto-implements
+        # the GATT Generic Access Service (0x1800), and clients read the
+        # human name from the Device Name characteristic (0x2A00) once
+        # connected. Companion apps that scan by ServiceUUID filter (the
+        # standard pattern) don't need the LocalName in the AD.
+        #
+        # Empty Includes=[] tells BlueZ NOT to auto-include anything we
+        # didn't ask for (TX Power, Appearance, etc.).
         return {
             LE_ADVERTISEMENT_IFACE: {
                 "Type": self.ad_type,
                 "ServiceUUIDs": dbus.Array([DTMF_SVC_UUID], signature="s"),
-                "LocalName": dbus.String(self.local_name),
+                "Includes": dbus.Array([], signature="s"),
             }
         }
 
@@ -833,6 +854,20 @@ def power_on_adapter(bus, adapter_path):
         props.Set(ADAPTER_IFACE, "PairableTimeout", dbus.UInt32(0))
     except dbus.exceptions.DBusException as e:
         log.warning("Could not set Pairable on adapter: %s", e)
+
+    # Adapter Alias = hostname. BlueZ exposes this through the GATT
+    # Generic Access Service / Device Name characteristic (0x2A00), so
+    # clients see the full hostname once connected — no truncation
+    # needed (in contrast with LocalName-in-advertising which has the
+    # 31-byte cap).
+    try:
+        host = socket.gethostname()
+    except Exception:
+        host = "hotspot"
+    try:
+        props.Set(ADAPTER_IFACE, "Alias", dbus.String(host))
+    except dbus.exceptions.DBusException as e:
+        log.warning("Could not set adapter Alias to %r: %s", host, e)
 
 
 def register_agent(bus):

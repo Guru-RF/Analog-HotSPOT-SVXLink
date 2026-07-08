@@ -26,10 +26,22 @@ Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
       - result:     notified on the status characteristic
   Feed characteristic       : 6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d
       - properties: notify
-      - payload:    compact JSON snapshot of hotspot state built by tailing
-                    /var/log/svxlink: ip, callsign (cs), frequency (fq),
-                    talkgroup (tg), current talker (tk), last talker (ltk),
-                    tx / rx flags. Clients should negotiate MTU >= 200.
+      - payload:    compact JSON snapshot of hotspot volatile state built
+                    by tailing /var/log/svxlink: ip, callsign (cs),
+                    frequency (fq), talkgroup (tg), current talker (tk),
+                    last talker (ltk), tx / rx flags, 4G signal (sg),
+                    reflector domain (rf), TX CTCSS (ctx). Fits comfortably
+                    under iOS's ~185-byte ATT MTU cap.
+  Config characteristic     : 6b1d6a15-c50f-4d86-a7f3-7f2a3a1b2c3d
+      - properties: read
+      - payload:    JSON with the static-per-session config fields that
+                    used to live on the feed but pushed it past the iOS
+                    MTU: mt (MONITOR_TGS), ct (CTCSS_TO_TG). Clients read
+                    this ONCE on connect and merge into their feed model.
+                    Values only change on daemon restart (svxlink.conf
+                    edit + service restart). Read Blob (offset argument)
+                    is honoured so BlueZ transparently fragments the
+                    response for whatever MTU is negotiated.
 
 The server advertises as the device hostname and does not require pairing —
 the characteristics have no encrypt-* flags, so iOS/macOS (Web Bluetooth)
@@ -84,6 +96,7 @@ DTMF_WRITE_UUID = "6b1d6a11-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_STATUS_UUID = "6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_COMMAND_UUID = "6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d"
 DTMF_FEED_UUID = "6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d"
+DTMF_CONFIG_UUID = "6b1d6a15-c50f-4d86-a7f3-7f2a3a1b2c3d"
 
 DTMF_HELPER = "/usr/sbin/hotspot_dtmf"
 ALLOWED_DTMF_CHARS = set("0123456789ABCDabcd*#")
@@ -440,6 +453,68 @@ class FeedCharacteristic(Characteristic):
         log.info("Feed notifications stopped")
 
 
+class ConfigCharacteristic(Characteristic):
+    """Read-only static-per-session hotspot config.
+
+    Carries the fields that used to travel on the feed notify but pushed
+    the JSON past iOS's ~185-byte ATT MTU cap (which iOS Core Bluetooth
+    won't grow — there's no client API to raise it):
+
+      - mt : MONITOR_TGS  (comma-separated TG list)
+      - ct : CTCSS_TO_TG  (per-tone TG mapping)
+
+    Clients should read this ONCE on connect and merge the values into
+    their feed-state model. These fields only change when svxlink.conf
+    is edited AND the daemon is restarted, so no notify is needed.
+
+    Read Blob (multi-fragment reads) is supported via the standard
+    options["offset"] argument — BlueZ transparently fragments the
+    response to fit the negotiated ATT MTU.
+    """
+
+    def __init__(self, bus, index, service):
+        super().__init__(bus, index, DTMF_CONFIG_UUID, ["read"], service)
+        # Snapshot at construction time — mirrors what StateFeed does for
+        # the static fields it still carries (cs, rf, fq, ctx).
+        self._cache = self._load_payload()
+
+    def _load_payload(self):
+        payload = {
+            "mt": self._read_conf_list("MONITOR_TGS"),
+            "ct": self._read_conf_list("CTCSS_TO_TG"),
+        }
+        return json.dumps(payload, separators=(",", ":")).encode("utf-8")
+
+    @staticmethod
+    def _read_conf_list(key):
+        # Same logic StateFeed uses for CALLSIGN/DNS_DOMAIN reads —
+        # tolerates optional quoting around the value.
+        try:
+            with open(SVXLINK_CONF, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    m = re.match(rf'^\s*{key}\s*=\s*"?(.+?)"?\s*$', stripped)
+                    if m:
+                        return m.group(1).strip()
+        except Exception:
+            pass
+        return ""
+
+    @dbus.service.method(GATT_CHRC_IFACE, in_signature="a{sv}", out_signature="ay")
+    def ReadValue(self, options):
+        # BlueZ passes options["offset"] as a dbus.UInt16 when the client
+        # issues a Read Blob for continuation. Return bytes from offset;
+        # BlueZ handles ATT-MTU chunking for us.
+        offset = int(options.get("offset", 0))
+        chunk = self._cache[offset:]
+        return dbus.Array(
+            [dbus.Byte(b) for b in chunk],
+            signature="y",
+        )
+
+
 class StateFeed:
     """Tails /var/log/svxlink, builds compact JSON, pushes to FeedCharacteristic.
 
@@ -448,6 +523,10 @@ class StateFeed:
 
     def __init__(self, feed_char):
         self.feed_char = feed_char
+        # NOTE: mt (MONITOR_TGS) and ct (CTCSS_TO_TG) intentionally are NOT
+        # carried on the feed anymore — they pushed the JSON past iOS's
+        # ~185-byte ATT MTU cap. They're served from ConfigCharacteristic
+        # (read-once on connect). See the module docstring for the split.
         self.state = {
             "ip": "",
             "cs": "",
@@ -459,8 +538,6 @@ class StateFeed:
             "rx": 0,
             "sg": None,
             "rf": "",
-            "mt": "",
-            "ct": "",
             "ctx": "",
         }
         self._last_payload = None
@@ -477,11 +554,7 @@ class StateFeed:
     def _read_reflector(self):
         return self._read_conf_value("DNS_DOMAIN")
 
-    def _read_monitor_tgs(self):
-        return self._read_conf_list("MONITOR_TGS")
-
-    def _read_ctcss_to_tg(self):
-        return self._read_conf_list("CTCSS_TO_TG")
+    # (mt/ct now live on ConfigCharacteristic — see module docstring.)
 
     def _read_conf_value(self, key):
         # Single-token values (CALLSIGN, DNS_DOMAIN) — no spaces / commas.
@@ -492,23 +565,6 @@ class StateFeed:
                     if not line or line.startswith("#"):
                         continue
                     m = re.match(rf'^\s*{key}\s*=\s*"?([^"\s]+)"?\s*$', line)
-                    if m:
-                        return m.group(1).strip()
-        except Exception:
-            pass
-        return ""
-
-    def _read_conf_list(self, key):
-        # Multi-value comma-separated lists (MONITOR_TGS, CTCSS_TO_TG) — kept
-        # as the raw string so the client can parse / display as it likes.
-        try:
-            with open(SVXLINK_CONF, "r", encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    line = line.rstrip("\n")
-                    stripped = line.strip()
-                    if not stripped or stripped.startswith("#"):
-                        continue
-                    m = re.match(rf'^\s*{key}\s*=\s*"?(.+?)"?\s*$', stripped)
                     if m:
                         return m.group(1).strip()
         except Exception:
@@ -671,8 +727,6 @@ class StateFeed:
     def _run(self):
         self.state["cs"] = self._read_callsign()
         self.state["rf"] = self._read_reflector()
-        self.state["mt"] = self._read_monitor_tgs()
-        self.state["ct"] = self._read_ctcss_to_tg()
         self.state["fq"] = self._read_frequency()
         self.state["ctx"] = self._read_tx_ctcss()
         self.state["ip"] = self._read_ip()
@@ -727,12 +781,14 @@ class HotspotDtmfService(Service):
         super().__init__(bus, index, DTMF_SVC_UUID, True)
         status = StatusCharacteristic(bus, 2, self)
         self.feed = FeedCharacteristic(bus, 3, self)
+        config = ConfigCharacteristic(bus, 4, self)
         write = DtmfWriteCharacteristic(bus, 0, self, status)
         command = CommandCharacteristic(bus, 1, self, status)
         self.add_characteristic(write)
         self.add_characteristic(command)
         self.add_characteristic(status)
         self.add_characteristic(self.feed)
+        self.add_characteristic(config)
 
 
 class Advertisement(dbus.service.Object):

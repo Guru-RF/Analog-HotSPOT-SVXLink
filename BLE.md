@@ -55,6 +55,7 @@ characteristics:
 | Status notify | `6b1d6a12-c50f-4d86-a7f3-7f2a3a1b2c3d` | `notify` |
 | Command write | `6b1d6a13-c50f-4d86-a7f3-7f2a3a1b2c3d` | `write`, `write-without-response` |
 | Feed notify | `6b1d6a14-c50f-4d86-a7f3-7f2a3a1b2c3d` | `notify` |
+| Config read | `6b1d6a15-c50f-4d86-a7f3-7f2a3a1b2c3d` | `read` |
 
 On iOS these become `CBUUID` values; on Android `UUID.fromString(...)`.
 
@@ -156,8 +157,12 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `rx` | 0 / 1 | local squelch open (RF carrier present) |
   | `sg` | int / 0 / null | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`). Tri-state — see below. |
   | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
-  | `mt` | string | Monitored talkgroups (`MONITOR_TGS`), raw — e.g. `8++, 23+, 50, 51, 52, 53, 54, 55`. `+` suffixes are SVXLink priority levels. |
-  | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…` |
+
+  **`mt` and `ct` moved off the feed** — they used to travel here but
+  pushed the payload past iOS's ~185-byte ATT MTU cap (which iOS Core
+  Bluetooth won't grow, no client API to raise it). Read them once
+  from the [Config read characteristic](#config-read-characteristic)
+  after connect and merge into your feed-state model.
 
   `sg` semantics, so the app can tell "no modem" apart from "modem but no signal":
 
@@ -170,17 +175,19 @@ would show, streamed as JSON. Works even on units that have no OLED.
   Example with 4G online:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
   ```
 
   Example with no 4G module installed:
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link","mt":"8++, 23+, 50, 51","ct":"67.0:8400,69.3:8,71.9:23"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link"}
   ```
 
-  Note: `mt` and `ct` are read once from `/etc/svxlink/svxlink.conf` at
-  service start. After running `hotspot-config` to change them, restart
+  Note: the static fields on this feed (`cs`, `rf`, `fq`, `ctx`) are
+  read once from `/etc/svxlink/svxlink.conf` (and `/usr/sbin/hotspot`)
+  at service start. After running `hotspot-config` to change them,
+  restart
   `hotspot-bluetooth` (or reboot) for the new values to appear on the
   feed. The auto-update flow in `hotspot-config-online` already ends
   with a reboot, so no extra step needed there.
@@ -207,8 +214,10 @@ would show, streamed as JSON. Works even on units that have no OLED.
 
 ### MTU — important for the feed
 
-The feed payload is typically 90–140 bytes. BLE's default ATT MTU is 23
-bytes (20 bytes of payload), which would truncate it.
+Post-split, the feed payload is typically 90–140 bytes and fits under
+every ATT MTU CoreBluetooth / Web Bluetooth negotiate by default. BLE's
+default ATT MTU is 23 bytes (20 bytes of payload) though, which would
+still truncate.
 
 - **iOS / macOS** — CoreBluetooth auto-negotiates MTU ≈ 185. No action needed.
 - **Web Bluetooth** — negotiates MTU 247 automatically. No action needed.
@@ -216,6 +225,69 @@ bytes (20 bytes of payload), which would truncate it.
   call `gatt.requestMtu(247)`** and wait for `onMtuChanged` before
   subscribing to the feed characteristic. Without this, every feed
   notification arrives truncated.
+
+## Config read characteristic
+
+Static-per-session config that used to travel on the feed but pushed
+the JSON past iOS's ~185-byte ATT MTU cap. iOS Core Bluetooth doesn't
+grow the MTU beyond ~185 and offers no client API to raise it, so
+mixing static-and-large fields with volatile-and-small ones on the
+same notify characteristic silently truncated on iOS whenever the
+user added more talkgroups.
+
+- UUID: `6b1d6a15-c50f-4d86-a7f3-7f2a3a1b2c3d`
+- Properties: `read`
+- Payload: one compact JSON object, UTF-8. Fields:
+
+  | Key | Type | Meaning |
+  | --- | --- | --- |
+  | `mt` | string | Monitored talkgroups (`MONITOR_TGS`), raw — e.g. `8++, 23+, 50, 51, 52, 53, 54, 55`. `+` suffixes are SVXLink priority levels. |
+  | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…` |
+
+  Example:
+
+  ```json
+  {"mt":"8,11,1745,8400,8401,8670","ct":"67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,88.5:8401"}
+  ```
+
+### Usage pattern
+
+Read this **once** after `onServicesDiscovered`, cache the values, and
+merge them into your feed-state model so the rest of the app sees the
+same shape as before the split.
+
+```pseudo
+onServicesDiscovered:
+  // Android: request MTU first
+  gatt.requestMtu(247)
+
+onMtuChanged (or immediately on iOS/macOS):
+  configChar.read() -> {"mt": "...", "ct": "..."}
+  cache mt, ct
+  feedChar.subscribe()
+
+onFeedNotify(json):
+  feedState = parse(json)
+  feedState.mt = cachedMt
+  feedState.ct = cachedCt
+  render(feedState)
+```
+
+### Read Blob support
+
+The payload is small enough to fit in one MTU on Android/Web Bluetooth
+(MTU 247) but may need a two-frame Read Blob on iOS when both `mt` and
+`ct` are long. The daemon's `ReadValue` honours the standard
+`options["offset"]` argument, so BlueZ transparently fragments the
+response — clients using the platform's standard `read()` API get the
+full value with no extra work.
+
+### Freshness
+
+Values only change when `svxlink.conf` is edited AND `hotspot-bluetooth`
+is restarted (or the box is rebooted). During a live BLE session they
+never mutate. Reading once on connect is correct; there's no notify
+channel to subscribe to for changes.
 
 ## Example session
 

@@ -55,6 +55,7 @@ reconnects skip the handshake. Add encrypt-* flags only if you actually
 want to *require* bonded clients.
 """
 
+import glob
 import json
 import logging
 import os
@@ -845,6 +846,91 @@ class Advertisement(dbus.service.Object):
         log.info("Advertisement released: %s", self.path)
 
 
+def _force_bondable(reason):
+    """Belt-and-braces: bluetoothd sends MGMT Set Bondable → 0x00 at power-on
+    when main_opts.pairable is false AND no agent is registered yet
+    (adapter.c::adapter_set_io_capability). D-Bus Adapter1.Pairable=True
+    maps to Set Bondable 0x01 but races that path. Direct MGMT via btmgmt
+    is the only reliable way to lock it on. Idempotent — safe to call
+    repeatedly at every stage of startup where the race might re-fire.
+    """
+    try:
+        r = subprocess.run(
+            ["btmgmt", "bondable", "on"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+        detail = (r.stdout + r.stderr).strip() or "(no output)"
+        log.info("btmgmt bondable on (%s) rc=%d %s", reason, r.returncode, detail)
+    except Exception as e:
+        log.warning("btmgmt bondable on (%s) failed: %s", reason, e)
+
+
+def _log_adapter_state(bus, adapter_path, tag):
+    """Report the adapter's actual Pairable/Discoverable/Powered state AND
+    the MGMT-level `current settings` line (which is authoritative — D-Bus
+    can be stale) so users can grep their journal to confirm whether the
+    Bondable fix stuck. Look for `bondable` in the btmgmt-info line: if
+    it's missing, bluetoothd is still winning the race.
+    """
+    try:
+        p = dbus.Interface(
+            bus.get_object(BLUEZ_SERVICE_NAME, adapter_path), DBUS_PROP_IFACE
+        )
+        powered = bool(p.Get(ADAPTER_IFACE, "Powered"))
+        pairable = bool(p.Get(ADAPTER_IFACE, "Pairable"))
+        discoverable = bool(p.Get(ADAPTER_IFACE, "Discoverable"))
+        log.info(
+            "adapter-state[%s] Powered=%s Pairable=%s Discoverable=%s",
+            tag, powered, pairable, discoverable,
+        )
+    except Exception as e:
+        log.warning("adapter-state[%s] read failed: %s", tag, e)
+    try:
+        r = subprocess.run(
+            ["btmgmt", "info"], capture_output=True, text=True, timeout=3, check=False,
+        )
+        for line in r.stdout.splitlines():
+            if "current settings" in line.lower():
+                log.info("btmgmt-info[%s] %s", tag, line.strip())
+                break
+    except Exception as e:
+        log.warning("btmgmt info[%s] failed: %s", tag, e)
+
+
+def _audit_bond_store(tag):
+    """Prove the bond store is writable AND count existing bonds. An empty
+    count after a successful iOS pair is the smoking gun that Bondable is
+    still off. If writable=False the systemd namespacing is broken and
+    bluetoothd's writes are landing in an ephemeral overlay.
+    """
+    root = "/var/lib/bluetooth"
+    try:
+        writable = os.access(root, os.W_OK)
+    except Exception:
+        writable = False
+    info_files = glob.glob(os.path.join(root, "*", "*", "info"))
+    with_ltk = 0
+    with_irk = 0
+    for f in info_files:
+        try:
+            with open(f, "r", encoding="utf-8", errors="replace") as fh:
+                blob = fh.read()
+            if (
+                "[LongTermKey]" in blob
+                or "[SlaveLongTermKey]" in blob
+                or "[PeripheralLongTermKey]" in blob
+            ):
+                with_ltk += 1
+            if "[IdentityResolvingKey]" in blob:
+                with_irk += 1
+        except Exception:
+            pass
+    log.info(
+        "bond-store[%s] root=%s writable=%s info_files=%d with_ltk=%d with_irk=%d",
+        tag, root, writable, len(info_files), with_ltk, with_irk,
+    )
+
+
 def wait_for_bluez(bus, timeout=60):
     import time
     deadline = time.monotonic() + timeout
@@ -930,6 +1016,12 @@ def power_on_adapter(bus, adapter_path):
     except dbus.exceptions.DBusException as e:
         log.warning("Could not set adapter Alias to %r: %s", host, e)
 
+    # Force MGMT Bondable on directly. bluetoothd sends Set Bondable → 0x00
+    # at power-on unless AlwaysPairable=true in main.conf; the D-Bus
+    # Pairable=True above races that, hence the belt-and-braces btmgmt.
+    _force_bondable("post-power_on_adapter")
+    _log_adapter_state(bus, adapter_path, "post-power_on_adapter")
+
 
 def register_agent(bus):
     agent = JustWorksAgent(bus)
@@ -1010,6 +1102,11 @@ def main():
         )
         sys.exit(1)
     log.info("Using adapter: %s", adapter)
+    # Log the initial bond-store state so we can diagnose from the user's
+    # journal whether persistence is even possible on their box (writable=
+    # False → systemd namespace hides /var/lib/bluetooth, StateDirectory
+    # drop-in missing) and whether prior bonds survived a reboot.
+    _audit_bond_store("startup")
     power_on_adapter(bus, adapter)
 
     try:
@@ -1019,6 +1116,18 @@ def main():
             "Pairing agent registration failed (%s); Android clients that "
             "initiate bonding will reject-loop until this is resolved.", e
         )
+    # Kills the io_cap race: bluetoothd re-runs adapter_set_io_capability
+    # after RegisterAgent and can flip Bondable off again if AlwaysPairable
+    # isn't in main.conf. Re-assert. Also re-assert D-Bus Pairable so
+    # bluetoothctl show reports it truthfully next time.
+    _force_bondable("post-RegisterAgent")
+    try:
+        p = dbus.Interface(
+            bus.get_object(BLUEZ_SERVICE_NAME, adapter), DBUS_PROP_IFACE
+        )
+        p.Set(ADAPTER_IFACE, "Pairable", dbus.Boolean(True))
+    except Exception as e:
+        log.warning("re-assert Pairable after RegisterAgent failed: %s", e)
 
     service_manager = dbus.Interface(
         bus.get_object(BLUEZ_SERVICE_NAME, adapter), GATT_MANAGER_IFACE
@@ -1086,6 +1195,37 @@ def main():
             )
             if r.returncode == 0:
                 log.info("Advertising as %s (via btmgmt legacy adv, connectable+discoverable)", socket.gethostname())
+                # The mgmt Set Advertising path can clear Bondable when
+                # the adv record doesn't carry the discoverable flag; -g
+                # sets it but the safe move is to re-assert Bondable here
+                # anyway. Third-and-final leg of the belt-and-braces.
+                _force_bondable("post-add-adv")
+                _log_adapter_state(bus, adapter, "post-add-adv")
+                # Mark every already-paired device as Trusted so
+                # autonomous reconnects skip the agent (BlueZ otherwise
+                # calls the agent's Authorize methods on every service
+                # request from a known device, which is both slow and
+                # sometimes causes iOS to drop the link).
+                try:
+                    om = dbus.Interface(
+                        bus.get_object(BLUEZ_SERVICE_NAME, "/"), DBUS_OM_IFACE
+                    )
+                    trusted_n = 0
+                    for path, ifaces in om.GetManagedObjects().items():
+                        dev = ifaces.get(DEVICE_IFACE)
+                        if dev and dev.get("Paired"):
+                            try:
+                                dbus.Interface(
+                                    bus.get_object(BLUEZ_SERVICE_NAME, path),
+                                    DBUS_PROP_IFACE,
+                                ).Set(DEVICE_IFACE, "Trusted", dbus.Boolean(True))
+                                trusted_n += 1
+                            except Exception as e:
+                                log.warning("trust %s failed: %s", path, e)
+                    if trusted_n:
+                        log.info("post-adv trust-sweep: marked %d paired device(s) Trusted", trusted_n)
+                except Exception as e:
+                    log.warning("post-adv trust-sweep failed: %s", e)
             else:
                 # btmgmt sometimes prints to stdout, sometimes stderr,
                 # sometimes both. Surface all of it for diagnosis.

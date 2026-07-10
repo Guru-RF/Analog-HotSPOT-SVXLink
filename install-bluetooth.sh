@@ -199,7 +199,33 @@ if [[ -f /etc/bluetooth/main.conf ]]; then
   # LE advertisement interval (ms). Lower = quicker reconnect after a drop.
   run "sed -i -E 's/^[#[:space:]]*(MinAdvertisementInterval[[:space:]]*=).*/\1 100/' /etc/bluetooth/main.conf"
   run "sed -i -E 's/^[#[:space:]]*(MaxAdvertisementInterval[[:space:]]*=).*/\1 150/' /etc/bluetooth/main.conf"
+  # Bond-persistence fix. Without AlwaysPairable=true, bluetoothd sends
+  # MGMT Set Bondable → 0x00 at power-on when no agent is registered
+  # yet (adapter.c::adapter_set_io_capability). LTKs then get discarded
+  # after SMP completes, causing iOS to re-pair on every reconnect.
+  run "sed -i -E 's/^[#[:space:]]*(AlwaysPairable[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+  grep -qE '^[[:space:]]*AlwaysPairable[[:space:]]*=' /etc/bluetooth/main.conf \
+    || run "printf '\nAlwaysPairable = true\n' >> /etc/bluetooth/main.conf"
+  # iOS rotates its RPA every ~15 min. Without Privacy=device BlueZ
+  # doesn't populate the kernel LE resolving list, so the stored IRK
+  # can't resolve a rotated address to the known bond and iOS looks
+  # like a new device (→ re-pair).
+  run "sed -i -E 's/^[#[:space:]]*(Privacy[[:space:]]*=).*/\1 device/' /etc/bluetooth/main.conf"
+  grep -qE '^[[:space:]]*Privacy[[:space:]]*=' /etc/bluetooth/main.conf \
+    || run "printf 'Privacy = device\n' >> /etc/bluetooth/main.conf"
+  # iOS occasionally re-initiates SMP after RPA rotation edge cases;
+  # default policy rejects it and forces the user through Settings →
+  # Forget. Accept the re-pair silently.
+  run "sed -i -E 's|^[#[:space:]]*(JustWorksRepairing[[:space:]]*=).*|\1 always|' /etc/bluetooth/main.conf"
+  grep -qE '^[[:space:]]*JustWorksRepairing[[:space:]]*=' /etc/bluetooth/main.conf \
+    || run "printf 'JustWorksRepairing = always\n' >> /etc/bluetooth/main.conf"
 fi
+
+# Ensure the bond store dir exists with correct perms before bluetoothd
+# starts. Missing dir + ProtectSystem=strict in the base unit makes
+# systemd namespace the write path onto an ephemeral overlay so bonds
+# vanish at service stop (bluez issue #329).
+run "install -d -m 0700 -o root -g root /var/lib/bluetooth"
 
 say "Enabling bluetoothd --experimental (needed for several BLE stability fixes)"
 BTD=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
@@ -210,10 +236,16 @@ run "mkdir -p /etc/systemd/system/bluetooth.service.d"
 # (AVRCP "Operation not permitted" etc.) when BR/EDR is off, and the MIDI
 # plugin in particular is a documented cause of GATT disconnects on Pi.
 NOPLUGIN=midi,sap,input,hog,a2dp,avrcp,audio,hsp,hfp,pbap,map,obex,network,health,wiimote
+# StateDirectory=bluetooth is the systemd-managed way to guarantee that
+# /var/lib/bluetooth exists with the right owner/mode BEFORE ExecStart —
+# even under ProtectSystem=strict in the base unit. The ReadWritePaths
+# with the "-" prefix tolerates the dir being absent at parse time.
 cat > /etc/systemd/system/bluetooth.service.d/experimental.conf <<EOF
 [Service]
 ExecStart=
 ExecStart=$BTD --experimental --noplugin=$NOPLUGIN
+StateDirectory=bluetooth
+ReadWritePaths=-/var/lib/bluetooth
 EOF
 run "systemctl daemon-reload"
 run "systemctl restart bluetooth"

@@ -614,9 +614,28 @@ EOF
       run "sed -i -E 's/^[#[:space:]]*(FastConnectable[[:space:]]*=).*/\1 false/' /etc/bluetooth/main.conf"
       run "sed -i -E 's/^[#[:space:]]*(MinAdvertisementInterval[[:space:]]*=).*/\1 100/' /etc/bluetooth/main.conf"
       run "sed -i -E 's/^[#[:space:]]*(MaxAdvertisementInterval[[:space:]]*=).*/\1 150/' /etc/bluetooth/main.conf"
+      # iOS bond-persistence fix (keep in sync with install-bluetooth.sh):
+      # AlwaysPairable=true kills bluetoothd's race that disables Bondable
+      # at power-on when no agent is registered yet. Privacy=device makes
+      # the kernel LE resolving list actually populate so iOS's rotating
+      # RPA resolves against the stored IRK. JustWorksRepairing=always
+      # accepts iOS's occasional re-pair attempts silently.
+      run "sed -i -E 's/^[#[:space:]]*(AlwaysPairable[[:space:]]*=).*/\1 true/' /etc/bluetooth/main.conf"
+      grep -qE '^[[:space:]]*AlwaysPairable[[:space:]]*=' /etc/bluetooth/main.conf \
+        || run "printf '\nAlwaysPairable = true\n' >> /etc/bluetooth/main.conf"
+      run "sed -i -E 's/^[#[:space:]]*(Privacy[[:space:]]*=).*/\1 device/' /etc/bluetooth/main.conf"
+      grep -qE '^[[:space:]]*Privacy[[:space:]]*=' /etc/bluetooth/main.conf \
+        || run "printf 'Privacy = device\n' >> /etc/bluetooth/main.conf"
+      run "sed -i -E 's|^[#[:space:]]*(JustWorksRepairing[[:space:]]*=).*|\1 always|' /etc/bluetooth/main.conf"
+      grep -qE '^[[:space:]]*JustWorksRepairing[[:space:]]*=' /etc/bluetooth/main.conf \
+        || run "printf 'JustWorksRepairing = always\n' >> /etc/bluetooth/main.conf"
     fi
 
-    say "Re-applying bluetoothd drop-in (--experimental + plugin trim)"
+    # Ensure the bond store exists with correct perms so bluetoothd can
+    # actually write LTKs to it after a successful pair.
+    run "install -d -m 0700 -o root -g root /var/lib/bluetooth"
+
+    say "Re-applying bluetoothd drop-in (--experimental + plugin trim + bond store)"
     BTD_PATH=$(awk -F= '/^ExecStart=/{ print $2; exit }' /lib/systemd/system/bluetooth.service 2>/dev/null | awk '{print $1}')
     [[ -z "${BTD_PATH}" ]] && BTD_PATH=/usr/libexec/bluetooth/bluetoothd
     mkdir -p /etc/systemd/system/bluetooth.service.d
@@ -625,6 +644,8 @@ EOF
 [Service]
 ExecStart=
 ExecStart=${BTD_PATH} --experimental --noplugin=${BTD_NOPLUGIN}
+StateDirectory=bluetooth
+ReadWritePaths=-/var/lib/bluetooth
 EOF
 
     RELOAD_SYSTEMD=1

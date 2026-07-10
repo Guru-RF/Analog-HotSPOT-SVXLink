@@ -70,6 +70,48 @@ DETECTED_GENERATION=$(echo "${HOTSPOT_DETECT_OUT}" | awk -F': ' '/^GENERATION:/ 
 DETECTED_POWER=$(echo "${HOTSPOT_DETECT_OUT}"      | awk -F': ' '/^POWER:/ {print $2}')
 echo ""
 
+# Pi board detection + safety cleanup. The Pi Zero 2W tolerates (and
+# needs, in the plastic case) the aggressive undervolt/underclock that
+# hotspot-options writes into config.txt / cmdline.txt:
+#   arm_freq=700 / arm_freq_min=500 / over_voltage=-6 /
+#   gpu_freq=150 / core_freq=150 / hdmi_blanking=1 / maxcpus=2
+# On Pi 4 and Pi 5 those settings break UART bit-timing (mini-UART is
+# clocked off core_freq — pinning it to 150 MHz kills SA818 comms) and
+# generally cripple perfectly capable hardware. So if we ever see this
+# tuning on a non-Zero-2W board (e.g. an SD card that was moved from a
+# Pi Zero 2W into a Pi 4/5), strip it here as part of hotspot-config
+# so the user never has to hunt for it.
+PI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo "unknown")
+IS_PI_ZERO2W=0
+case "$PI_MODEL" in
+  *"Pi Zero 2"*) IS_PI_ZERO2W=1 ;;
+esac
+say "Detected board: ${PI_MODEL}"
+
+if [ "$IS_PI_ZERO2W" -ne 1 ]; then
+  CONFIG_TXT="/boot/firmware/config.txt"
+  CMDLINE_TXT="/boot/firmware/cmdline.txt"
+  STRIPPED=0
+  if [ -f "$CONFIG_TXT" ]; then
+    for setting in "arm_freq=700" "arm_freq_min=500" "over_voltage=-6" "gpu_freq=150" "core_freq=150" "hdmi_blanking=1"; do
+      if grep -q "^${setting}" "$CONFIG_TXT"; then
+        sed -i "\|^${setting}|d" "$CONFIG_TXT"
+        say "  removed ${setting} from ${CONFIG_TXT} (Pi Zero 2W tuning, unsafe on ${PI_MODEL})"
+        STRIPPED=1
+      fi
+    done
+  fi
+  if [ -f "$CMDLINE_TXT" ] && grep -q "maxcpus=2" "$CMDLINE_TXT"; then
+    sed -i "s/\bmaxcpus=2\b//g" "$CMDLINE_TXT"
+    say "  removed maxcpus=2 from ${CMDLINE_TXT} (Pi Zero 2W tuning, unsafe on ${PI_MODEL})"
+    STRIPPED=1
+  fi
+  if [ "$STRIPPED" -eq 1 ]; then
+    say "  Pi Zero 2W CPU/UART tuning stripped — a reboot is needed for the change to take effect."
+  fi
+fi
+echo ""
+
 # Detect chip variant + firmware version and enable/disable monitor accordingly.
 # Example output: "SA818: INFO: Firmware SA818, version: V1.0"
 #             or: "SA818: INFO: Firmware SA818PRO, version: V1.1"

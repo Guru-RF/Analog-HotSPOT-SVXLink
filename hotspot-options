@@ -65,22 +65,50 @@ remove_if_present_cmdline() {
     fi
 }
 
+# The FIRMWARE_SETTINGS above (arm_freq=700, core_freq=150,
+# over_voltage=-6, maxcpus=2, …) are Pi-Zero-2W-specific
+# undervolt/underclock defaults chosen for thermals in the plastic
+# hotspot case. On Pi 4 and Pi 5 those exact tweaks cause mini-UART
+# bit-timing instability (mini-UART is clocked off core_freq — pinning
+# it to 150 MHz breaks SA818 comms), and the negative over_voltage +
+# maxcpus=2 crippling makes no sense on the more powerful boards
+# anyway. So we detect the model and skip / actively clean up on
+# anything that isn't a Pi Zero 2W.
+PI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo "unknown")
+IS_ZERO2W=0
+case "$PI_MODEL" in
+  *"Pi Zero 2"*) IS_ZERO2W=1 ;;
+esac
+
 gum style --foreground "#04B575" "Temperature Tuning:"
-TEMP=$(gum choose "Yes" "No")
-gum style --foreground 212 "${TEMP}"
+if [ "$IS_ZERO2W" -ne 1 ]; then
+  gum style --foreground 220 "Detected ${PI_MODEL} — skipping temperature tuning."
+  gum style --foreground 220 "(arm_freq=700 / core_freq=150 / over_voltage=-6 / maxcpus=2 cause"
+  gum style --foreground 220 " UART stability issues on Pi 4 and Pi 5 and are Pi Zero 2W-specific.)"
+  # Auto-clean any prior tuning that may be left over from an SD card
+  # that was previously in a Pi Zero 2W. Idempotent — no-op if absent.
+  for setting in "${FIRMWARE_SETTINGS[@]}"; do
+      remove_if_present_config "$setting"
+  done
+  remove_if_present_cmdline
+  TEMP="No"  # for downstream logic that may check it
+else
+  TEMP=$(gum choose "Yes" "No")
+  gum style --foreground 212 "${TEMP}"
 
-if [ "${TEMP}" = "Yes" ]; then
-	for setting in "${FIRMWARE_SETTINGS[@]}"; do
-	    add_if_missing_config "$setting"
-	done
-	add_if_missing_cmdline
-fi
+  if [ "${TEMP}" = "Yes" ]; then
+    for setting in "${FIRMWARE_SETTINGS[@]}"; do
+        add_if_missing_config "$setting"
+    done
+    add_if_missing_cmdline
+  fi
 
-if [ "${TEMP}" = "No" ]; then
-	for setting in "${FIRMWARE_SETTINGS[@]}"; do
-	    remove_if_present_config "$setting"
-	done
-	remove_if_present_cmdline
+  if [ "${TEMP}" = "No" ]; then
+    for setting in "${FIRMWARE_SETTINGS[@]}"; do
+        remove_if_present_config "$setting"
+    done
+    remove_if_present_cmdline
+  fi
 fi
 
 gum style --foreground "#04B575" "Announce Remote Callsign in background ?:"

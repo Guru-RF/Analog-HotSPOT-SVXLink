@@ -149,7 +149,8 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `ip` | string | device's outbound IP (best-effort) |
   | `cs` | string | callsign from `/etc/svxlink/svxlink.conf` |
   | `fq` | string | frequency parsed from `/usr/sbin/hotspot` |
-  | `ctx` | string | CTCSS TX tone in Hz, parsed as the value before the comma in `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured. The `<rx>` slot is served separately as `cr` on the [Config read characteristic](#config-read-characteristic). |
+  | `ctx` | string | CTCSS TX tone in Hz, parsed as the value before the comma in `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured. |
+  | `cr` | string | Input (RX) CTCSS tone in Hz **only when the hotspot is in DTMF-switching mode** — e.g. `88.5`. `""` in CTCSS-switching mode (where the per-tone mapping on `ct` is what matters). Data source is chip-dependent: SA818PRO reads it from `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot`; SA818/SA868 reads it from `CTCSS_FQ` in `svxlink.conf`. Also mirrored on the [Config read characteristic](#config-read-characteristic) so clients that already read Config for `mt`/`ct` don't need to keep a separate value for the RX tone. |
   | `tg` | string | current talkgroup number |
   | `tk` | string | callsign of the active talker (empty if none) |
   | `ltk` | string | callsign of the last talker that finished |
@@ -158,11 +159,14 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `sg` | int / 0 / null | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`). Tri-state — see below. |
   | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
 
-  **`mt`, `ct` and `cr` moved off the feed** — they used to travel here
-  but pushed the payload past iOS's ~185-byte ATT MTU cap (which iOS
-  Core Bluetooth won't grow, no client API to raise it). Read them once
+  **`mt` and `ct` moved off the feed** — they used to travel here but
+  pushed the payload past iOS's ~185-byte ATT MTU cap (which iOS Core
+  Bluetooth won't grow, no client API to raise it). Read them once
   from the [Config read characteristic](#config-read-characteristic)
-  after connect and merge into your feed-state model.
+  after connect and merge into your feed-state model. `cr` stays on
+  the feed because it's a single short tone value (~5 bytes) — no MTU
+  risk — and it's convenient to render alongside `ctx` without a
+  second characteristic read.
 
   `sg` semantics, so the app can tell "no modem" apart from "modem but no signal":
 
@@ -172,16 +176,16 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `0` | 4G hardware present but not registered, qmicli timed out, or output unparseable | show "no signal" / "searching" |
   | negative int (e.g. `-78`) | live signal in dBm | render bars from value |
 
-  Example with 4G online:
+  Example with 4G online, DTMF-switching mode (single input CTCSS):
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","cr":"88.5","tg":"91","tk":"PD0CWM","ltk":"PD0CWM","tx":1,"rx":0,"sg":-78,"rf":"be.svx.link"}
   ```
 
-  Example with no 4G module installed:
+  Example in CTCSS-switching mode (per-tone mapping on `ct` from Config; `cr` empty):
 
   ```json
-  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link"}
+  {"ip":"10.0.0.42","cs":"ON7F","fq":"434.200","ctx":"88.5","cr":"","tg":"91","tk":"","ltk":"","tx":0,"rx":0,"sg":null,"rf":"be.svx.link"}
   ```
 
   Note: the static fields on this feed (`cs`, `rf`, `fq`, `ctx`) are

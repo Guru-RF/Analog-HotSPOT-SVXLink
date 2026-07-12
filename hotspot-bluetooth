@@ -30,8 +30,10 @@ Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
                     by tailing /var/log/svxlink: ip, callsign (cs),
                     frequency (fq), talkgroup (tg), current talker (tk),
                     last talker (ltk), tx / rx flags, 4G signal (sg),
-                    reflector domain (rf), TX CTCSS (ctx). Fits comfortably
-                    under iOS's ~185-byte ATT MTU cap.
+                    reflector domain (rf), TX CTCSS (ctx), input RX
+                    CTCSS in DTMF-switching mode (cr, empty in
+                    CTCSS-switching mode). Fits comfortably under iOS's
+                    ~185-byte ATT MTU cap.
   Config characteristic     : 6b1d6a15-c50f-4d86-a7f3-7f2a3a1b2c3d
       - properties: read
       - payload:    JSON with the static-per-session config fields that
@@ -601,6 +603,7 @@ class StateFeed:
             "sg": None,
             "rf": "",
             "ctx": "",
+            "cr": "",
         }
         self._last_payload = None
         self._last_sent = 0.0
@@ -794,6 +797,11 @@ class StateFeed:
         self.state["rf"] = self._read_reflector()
         self.state["fq"] = self._read_frequency()
         self.state["ctx"] = self._read_tx_ctcss()
+        # cr = RX/input CTCSS tone in DTMF-switching mode, "" otherwise.
+        # Same logic ConfigCharacteristic uses; kept here on the feed
+        # alongside ctx so clients can render the "Input CTCSS → DTMF"
+        # row without a second characteristic read.
+        self.state["cr"] = ConfigCharacteristic._read_rx_ctcss()
         self.state["ip"] = self._read_ip()
         self.state["sg"] = self._refresh_signal()
         self._last_ip_refresh = time.monotonic()

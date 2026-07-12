@@ -329,25 +329,72 @@ if [ "${BAND}" = "2m" ]; then
   fi
 fi
 
+# Talkgroup-switching method. Two independent axes:
+#
+#   IS_PRO_CHIP=1 → SA818PRO. Chip decodes ONE CTCSS tone in hardware and
+#     asserts GPIO12; svxlink reads that as squelch (SQL_DET=GPIOD) and
+#     never sees the audio-side tone, so per-tone TG switching is
+#     physically impossible. Forced to DTMF.
+#
+#   IS_PRO_CHIP=0 → plain SA818 / SA868. svxlink does software CTCSS
+#     decode over the whole audio band. Both modes are possible:
+#       - DTMF  : single RX tone opens squelch; user dials DTMF codes
+#                 to change TG. DEFAULT_TG is the first monitored TG so
+#                 the box boots ready-to-talk.
+#       - CTCSS : per-tone→TG mapping. Squelch opens on any tone in the
+#                 list; svxlink switches to the mapped TG. Traditional
+#                 hotspot behaviour.
+#
+# We preserve the user's previous choice by inspecting the running
+# CTCSS_TO_TG value (empty ⇒ they were on DTMF).
 if [[ "${IS_PRO_CHIP}" == "1" ]]; then
-  # SA818PRO: chip handles CTCSS in hardware and asserts GPIO12 only when
-  # the configured RX tone is present. svxlink reads that GPIO as squelch
-  # (SQL_DET=GPIOD below), so we ask for one RX tone instead of a per-tone
-  # talkgroup mapping.
+  SWITCH_MODE="DTMF"
+  say "SA818PRO detected — TG switching is DTMF (chip decodes one CTCSS tone to GPIO12 in hardware; per-tone mapping is impossible)."
+else
+  # Preselect: previous choice if there's an existing svxlink.conf,
+  # otherwise CTCSS (the historical non-PRO default on a fresh install).
+  if [[ ! -f /etc/svxlink/svxlink.conf ]]; then
+    OLDSWITCH="CTCSS"
+  elif [[ -n "${OLDCTCSSMAPPING}" && "${OLDCTCSSMAPPING}" != "--CTCSSMAPPING--" ]]; then
+    OLDSWITCH="CTCSS"
+  else
+    OLDSWITCH="DTMF"
+  fi
+  gum style --foreground "#04B575" "Talkgroup switching method:"
+  say "  DTMF  — single RX CTCSS tone opens squelch; dial a DTMF code to change TG."
+  say "  CTCSS — per-tone mapping; transmit a mapped tone to change TG."
+  SWITCH_MODE=$(gum choose --selected "${OLDSWITCH}" "DTMF" "CTCSS")
+  gum style --foreground 212 "${SWITCH_MODE}"
+fi
+
+if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
+  # One RX tone for squelch. PRO decodes it in hardware; non-PRO gives
+  # it to svxlink via CTCSS_FQ (single-entry list).
   gum style --foreground "#04B575" "Enter RX CTCSS tone (default 88.5) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5):"
   if [[ "${OLDCTCSSRX}" == "" || "${OLDCTCSSRX}" == "0" ]]; then
     OLDCTCSSRX="88.5"
   fi
-  CTCSSRX=$(gum input --value "${OLDCTCSSRX}")
-  if [[ "${CTCSSRX}" == "" ]]; then
-    CTCSSRX="${OLDCTCSSRX}"
+  RXTONE=$(gum input --value "${OLDCTCSSRX}")
+  if [[ "${RXTONE}" == "" ]]; then
+    RXTONE="${OLDCTCSSRX}"
   fi
-  gum style --foreground 212 "${CTCSSRX}"
-  # No per-tone TG mapping on PRO — svxlink isn't doing CTCSS decode, so
-  # CTCSS_TO_TG would never fire. Leave the placeholders empty.
+  gum style --foreground 212 "${RXTONE}"
+  # CTCSS_TO_TG stays empty → no per-tone TG switching.
   CTCSSMAPPING=""
-  CTCSSLIST=""
+  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
+    # PRO: chip decodes the tone → GPIO12. svxlink's CTCSS_FQ line is
+    # commented out entirely by the PRO block below, so its value here
+    # doesn't matter. The sa818 chip needs the RX tone though.
+    CTCSSRX="${RXTONE}"
+    CTCSSLIST=""
+  else
+    # Non-PRO: chip pass-through (--ctcss TX,0), svxlink decodes the
+    # single tone via CTCSS_FQ=<tone>.
+    CTCSSRX=0
+    CTCSSLIST="${RXTONE}"
+  fi
 else
+  # CTCSS mode is non-PRO only (PRO forces DTMF above).
   gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,85.4:9000,88.5:8401):"
   if [[ "${OLDCTCSSMAPPING}" == "--CTCSSMAPPING--" ]]; then
     OLDCTCSSMAPPING="67.0:8400,69.3:8,71.9:23,74.4:9000"
@@ -358,6 +405,7 @@ else
   CTCSSMAPPING=$(gum input --value "${OLDCTCSSMAPPING}")
   gum style --foreground 212 "${CTCSSMAPPING}"
   CTCSSRX=0
+  # CTCSSLIST is derived from the mapping down in the apply block.
 fi
 
 # Always ask for CTCSS TX tone (from Tx1 CTCSS_FQ)
@@ -530,7 +578,13 @@ if [ $RESULT -eq 0 ]; then
   perl -i -pe "s/--HOST--/${REFLECTOR}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
-  CTCSSLIST=$(echo "${CTCSSMAPPING}" | tr ',' '\n' | cut -d':' -f1 | tr '\n' ',' | sed 's/,$//')
+  # In CTCSS switching mode CTCSSLIST is the set of tones svxlink must
+  # decode, derived from the mapping keys. In DTMF mode CTCSSLIST was
+  # already set at prompt time (single tone on non-PRO, empty on PRO)
+  # so don't overwrite it here.
+  if [[ "${SWITCH_MODE}" == "CTCSS" ]]; then
+    CTCSSLIST=$(echo "${CTCSSMAPPING}" | tr ',' '\n' | cut -d':' -f1 | tr '\n' ',' | sed 's/,$//')
+  fi
   perl -i -pe "s/--CTCSSLIST--/${CTCSSLIST}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--TGS--/${TGS}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/node_info.json
@@ -572,18 +626,20 @@ if [ $RESULT -eq 0 ]; then
     # off so the audio isn't shaped twice.
     perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/' /etc/svxlink/svxlink.conf
     perl -i -pe 's/^PREEMPHASIS=.*$/PREEMPHASIS=0/' /etc/svxlink/svxlink.conf
+  fi
 
-    # Default talkgroup: PRO has no per-tone CTCSS mapping, so users
-    # switch via DTMF. Sitting on TG0 by default means they have to dial
-    # in every time. Make DEFAULT_TG the first entry in their MONITOR_TGS
-    # list (stripping "+" priority markers and whitespace), so the box
-    # comes up already on the user's primary TG.
-    # NB: sed (not tr -d) on the per-line strip — tr's [:space:] eats the
-    # newlines we just inserted with tr ',' '\n' and collapses everything
-    # into one giant fake TG number.
+  # DTMF switching (PRO always, or non-PRO if the user chose it above):
+  # no per-tone CTCSS→TG mapping is in effect, so DEFAULT_TG=0 would
+  # leave the user parked on nothing and having to dial in every boot.
+  # Make DEFAULT_TG the first entry in MONITOR_TGS (stripping "+"
+  # priority markers + whitespace) so the box comes up on their primary
+  # TG. sed — not tr -d — on the per-line strip: tr's [:space:] eats
+  # the newlines we just inserted with tr ',' '\n' and collapses
+  # everything into one giant fake TG number.
+  if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
     FIRST_TG=$(echo "${TGS}" | tr ',' '\n' | sed 's/[+[:space:]]//g' | grep -E '^[0-9]+$' | head -n1)
     if [[ -n "${FIRST_TG}" ]]; then
-      say "Setting DEFAULT_TG=${FIRST_TG} (first monitored TG) — PRO chip uses DTMF switching, no per-tone CTCSS mapping"
+      say "Setting DEFAULT_TG=${FIRST_TG} (first monitored TG) — DTMF switching, no per-tone CTCSS mapping"
       perl -i -pe "s/^DEFAULT_TG=.*\$/DEFAULT_TG=${FIRST_TG}/" /etc/svxlink/svxlink.conf
     fi
   fi

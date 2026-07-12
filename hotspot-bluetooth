@@ -36,12 +36,15 @@ Protocol for the mobile app (iOS CoreBluetooth / Android BluetoothGatt):
       - properties: read
       - payload:    JSON with the static-per-session config fields that
                     used to live on the feed but pushed it past the iOS
-                    MTU: mt (MONITOR_TGS), ct (CTCSS_TO_TG). Clients read
-                    this ONCE on connect and merge into their feed model.
-                    Values only change on daemon restart (svxlink.conf
-                    edit + service restart). Read Blob (offset argument)
-                    is honoured so BlueZ transparently fragments the
-                    response for whatever MTU is negotiated.
+                    MTU: mt (MONITOR_TGS), ct (CTCSS_TO_TG per-tone
+                    mapping — empty in DTMF-switching mode), cr (single
+                    input CTCSS tone in DTMF mode — empty in CTCSS
+                    mode). Clients read this ONCE on connect and merge
+                    into their feed model. Values only change on daemon
+                    restart (svxlink.conf edit + service restart). Read
+                    Blob (offset argument) is honoured so BlueZ
+                    transparently fragments the response for whatever
+                    MTU is negotiated.
 
 The server advertises as the device hostname and does not require pairing —
 the characteristics have no encrypt-* flags, so iOS/macOS (Web Bluetooth)
@@ -462,7 +465,13 @@ class ConfigCharacteristic(Characteristic):
     won't grow — there's no client API to raise it):
 
       - mt : MONITOR_TGS  (comma-separated TG list)
-      - ct : CTCSS_TO_TG  (per-tone TG mapping)
+      - ct : CTCSS_TO_TG  (per-tone TG mapping; empty in DTMF-switching
+             mode — SA818PRO always, or SA818/SA868 when the user chose
+             DTMF in hotspot-config)
+      - cr : single input CTCSS tone in DTMF-switching mode (empty in
+             CTCSS-switching mode, where ct is populated instead). Lets
+             the client render "Input CTCSS → TG: {ct}" or "Input CTCSS
+             → DTMF: {cr}" without needing to know the chip variant.
 
     Clients should read this ONCE on connect and merge the values into
     their feed-state model. These fields only change when svxlink.conf
@@ -483,6 +492,7 @@ class ConfigCharacteristic(Characteristic):
         payload = {
             "mt": self._read_conf_list("MONITOR_TGS"),
             "ct": self._read_conf_list("CTCSS_TO_TG"),
+            "cr": self._read_rx_ctcss(),
         }
         return json.dumps(payload, separators=(",", ":")).encode("utf-8")
 
@@ -501,6 +511,57 @@ class ConfigCharacteristic(Characteristic):
                         return m.group(1).strip()
         except Exception:
             pass
+        return ""
+
+    @staticmethod
+    def _read_rx_ctcss():
+        # Single input CTCSS tone when the box is in DTMF-switching mode.
+        # Empty string when in CTCSS-switching mode (per-tone TG mapping)
+        # or if we can't determine it — the client should then render
+        # `ct` (the mapping) instead.
+        #
+        # Two data sources depending on the chip:
+        #   1. SA818PRO in DTMF mode — /usr/sbin/hotspot has
+        #      `--ctcss <tx>,<rx>` with rx = the user-chosen tone (PRO
+        #      chip decodes it in hardware and drives GPIO12 as squelch).
+        #      A non-zero rx in the hotspot script is only ever written
+        #      by the PRO DTMF path, so we return it immediately.
+        #   2. Plain SA818 / SA868 in DTMF mode — /usr/sbin/hotspot has
+        #      `--ctcss <tx>,0` (chip pass-through) and the actual tone
+        #      lives in svxlink.conf as CTCSS_FQ=<tone> (single value,
+        #      svxlink does the decoding).
+        #   3. Plain SA818 / SA868 in CTCSS mode — CTCSS_FQ is derived
+        #      from the mapping keys. Usually multi-tone (comma-joined),
+        #      BUT a 1-entry mapping produces a bare single tone with no
+        #      comma — indistinguishable from case 2 by CTCSS_FQ shape
+        #      alone. The actual discriminator is CTCSS_TO_TG being
+        #      empty (empty ⇒ DTMF, non-empty ⇒ CTCSS-map), so gate the
+        #      fallback on that. Without this gate, ct AND cr would
+        #      both be populated for the shipped-default single-pair
+        #      mapping, breaking the "exactly one is set" client
+        #      rendering contract in BLE.md.
+        try:
+            with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    m = re.search(
+                        r'--ctcss\s+[0-9]+(?:\.[0-9]+)?\s*,\s*([0-9]+(?:\.[0-9]+)?)',
+                        line,
+                    )
+                    if m:
+                        rx = m.group(1)
+                        try:
+                            if float(rx) > 0:
+                                return rx
+                        except ValueError:
+                            pass
+                        break
+        except Exception:
+            pass
+        if ConfigCharacteristic._read_conf_list("CTCSS_TO_TG"):
+            return ""
+        fq = ConfigCharacteristic._read_conf_list("CTCSS_FQ")
+        if fq and "," not in fq:
+            return fq
         return ""
 
     @dbus.service.method(GATT_CHRC_IFACE, in_signature="a{sv}", out_signature="ay")
@@ -585,9 +646,12 @@ class StateFeed:
         return ""
 
     def _read_tx_ctcss(self):
-        # CTCSS TX tone — hotspot-config writes `--ctcss <tone>,0` into
-        # /usr/sbin/hotspot (the trailing ,0 is the RX squelch tone, always
-        # 0 here because RX CTCSS is handled by svxlink, not the SA818).
+        # CTCSS TX tone — hotspot-config writes `--ctcss <tx>,<rx>` into
+        # /usr/sbin/hotspot. We want the value before the comma (TX).
+        # The RX slot is a real tone on SA818PRO in DTMF mode (chip does
+        # hardware decode → GPIO12) and 0 otherwise (chip pass-through;
+        # svxlink handles CTCSS decode via CTCSS_FQ in svxlink.conf).
+        # See ConfigCharacteristic._read_rx_ctcss for the RX side.
         try:
             with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:

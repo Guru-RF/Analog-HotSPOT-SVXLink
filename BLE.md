@@ -149,7 +149,7 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `ip` | string | device's outbound IP (best-effort) |
   | `cs` | string | callsign from `/etc/svxlink/svxlink.conf` |
   | `fq` | string | frequency parsed from `/usr/sbin/hotspot` |
-  | `ctx` | string | CTCSS TX tone in Hz, parsed from `--ctcss <tone>,0` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured |
+  | `ctx` | string | CTCSS TX tone in Hz, parsed as the value before the comma in `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured. The `<rx>` slot is served separately as `cr` on the [Config read characteristic](#config-read-characteristic). |
   | `tg` | string | current talkgroup number |
   | `tk` | string | callsign of the active talker (empty if none) |
   | `ltk` | string | callsign of the last talker that finished |
@@ -158,9 +158,9 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `sg` | int / 0 / null | 4G signal in dBm (Current / RSSI from `qmicli --nas-get-signal-strength`). Tri-state — see below. |
   | `rf` | string | SVXLink reflector domain (`DNS_DOMAIN` from svxlink.conf), e.g. `be.svx.link` |
 
-  **`mt` and `ct` moved off the feed** — they used to travel here but
-  pushed the payload past iOS's ~185-byte ATT MTU cap (which iOS Core
-  Bluetooth won't grow, no client API to raise it). Read them once
+  **`mt`, `ct` and `cr` moved off the feed** — they used to travel here
+  but pushed the payload past iOS's ~185-byte ATT MTU cap (which iOS
+  Core Bluetooth won't grow, no client API to raise it). Read them once
   from the [Config read characteristic](#config-read-characteristic)
   after connect and merge into your feed-state model.
 
@@ -242,12 +242,19 @@ user added more talkgroups.
   | Key | Type | Meaning |
   | --- | --- | --- |
   | `mt` | string | Monitored talkgroups (`MONITOR_TGS`), raw — e.g. `8++, 23+, 50, 51, 52, 53, 54, 55`. `+` suffixes are SVXLink priority levels. |
-  | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…` |
+  | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…`. **Empty when the hotspot is configured for DTMF-only switching** (SA818PRO always; SA818 / SA868 when the user chose DTMF in `hotspot-config`) — in that case read `cr` and label the row differently (see below). |
+  | `cr` | string | Single input CTCSS tone in DTMF-switching mode — e.g. `88.5`. Sourced from `/usr/sbin/hotspot`'s `--ctcss <tx>,<rx>` on SA818PRO (chip decodes it → GPIO12), or from `svxlink.conf::CTCSS_FQ` on non-PRO chips (svxlink decodes it in software). **Empty in CTCSS-switching mode** (in that case `ct` is populated instead). **Rendering hint** — exactly one of `ct` / `cr` is non-empty per session: use `ct` non-empty to label the row **Input CTCSS → TG**, `cr` non-empty to label it **Input CTCSS → DTMF**. |
 
-  Example:
+  Example — non-PRO chip, CTCSS-switching mode (per-tone TG mapping):
 
   ```json
-  {"mt":"8,11,1745,8400,8401,8670","ct":"67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,88.5:8401"}
+  {"mt":"8,11,1745,8400,8401,8670","ct":"67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,88.5:8401","cr":""}
+  ```
+
+  Example — SA818PRO or non-PRO with DTMF switching (single input tone, no per-tone mapping):
+
+  ```json
+  {"mt":"8,50,51,52","ct":"","cr":"88.5"}
   ```
 
 ### Usage pattern
@@ -262,32 +269,48 @@ onServicesDiscovered:
   gatt.requestMtu(247)
 
 onMtuChanged (or immediately on iOS/macOS):
-  configChar.read() -> {"mt": "...", "ct": "..."}
-  cache mt, ct
+  configChar.read() -> {"mt": "...", "ct": "...", "cr": "..."}
+  cache mt, ct, cr
   feedChar.subscribe()
 
 onFeedNotify(json):
   feedState = parse(json)
   feedState.mt = cachedMt
   feedState.ct = cachedCt
+  feedState.cr = cachedCr
   render(feedState)
+```
+
+Rendering the "Input CTCSS" row:
+
+```pseudo
+if feedState.ct != "":
+  show "Input CTCSS → TG: {feedState.ct}"
+else if feedState.cr != "":
+  show "Input CTCSS → DTMF: {feedState.cr}"
+else:
+  hide the row
 ```
 
 ### Read Blob support
 
 The payload is small enough to fit in one MTU on Android/Web Bluetooth
-(MTU 247) but may need a two-frame Read Blob on iOS when both `mt` and
-`ct` are long. The daemon's `ReadValue` honours the standard
+(MTU 247) but may need a two-frame Read Blob on iOS when `mt` + `ct`
+are long. The daemon's `ReadValue` honours the standard
 `options["offset"]` argument, so BlueZ transparently fragments the
 response — clients using the platform's standard `read()` API get the
 full value with no extra work.
 
 ### Freshness
 
-Values only change when `svxlink.conf` is edited AND `hotspot-bluetooth`
-is restarted (or the box is rebooted). During a live BLE session they
-never mutate. Reading once on connect is correct; there's no notify
-channel to subscribe to for changes.
+Values only change when the source files are edited AND
+`hotspot-bluetooth` is restarted (or the box is rebooted). `mt` and
+`ct` come from `/etc/svxlink/svxlink.conf`; `cr` may come from either
+`svxlink.conf` (non-PRO chips) or `/usr/sbin/hotspot` (SA818PRO in
+DTMF mode — hotspot-config rewrites that file when the RX tone
+changes). During a live BLE session they never mutate. Reading once
+on connect is correct; there's no notify channel to subscribe to for
+changes.
 
 ## Example session
 

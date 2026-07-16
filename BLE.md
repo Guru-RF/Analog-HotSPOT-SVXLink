@@ -150,7 +150,7 @@ would show, streamed as JSON. Works even on units that have no OLED.
   | `cs` | string | callsign from `/etc/svxlink/svxlink.conf` |
   | `fq` | string | frequency parsed from `/usr/sbin/hotspot` |
   | `ctx` | string | CTCSS TX tone in Hz, parsed as the value before the comma in `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot` (e.g. `88.5`); `""` if not configured. |
-  | `cr` | string | Input (RX) CTCSS tone in Hz **only when the hotspot is in DTMF-switching mode** — e.g. `88.5`. `""` in CTCSS-switching mode (where the per-tone mapping on `ct` is what matters). Data source is chip-dependent: SA818PRO reads it from `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot`; SA818/SA868 reads it from `CTCSS_FQ` in `svxlink.conf`. Also mirrored on the [Config read characteristic](#config-read-characteristic) so clients that already read Config for `mt`/`ct` don't need to keep a separate value for the RX tone. |
+  | `cr` | string | Input (RX) CTCSS tone in Hz **only when the hotspot is in DTMF-switching mode** — e.g. `88.5`. `""` in CTCSS-switching mode (where the per-tone mapping on `ct` is what matters). Read from `--ctcss <tx>,<rx>` in `/usr/sbin/hotspot` — the sa818 chip decodes the tone in hardware and drives GPIO12 as svxlink squelch (both PRO and non-PRO chips take this path since the config now routes every DTMF-mode box through the chip's hardware decoder). Also mirrored on the [Config read characteristic](#config-read-characteristic) so clients that already read Config for `mt`/`ct` don't need to keep a separate value for the RX tone. |
   | `tg` | string | current talkgroup number |
   | `tk` | string | callsign of the active talker (empty if none) |
   | `ltk` | string | callsign of the last talker that finished |
@@ -247,7 +247,7 @@ user added more talkgroups.
   | --- | --- | --- |
   | `mt` | string | Monitored talkgroups (`MONITOR_TGS`), raw — e.g. `8++, 23+, 50, 51, 52, 53, 54, 55`. `+` suffixes are SVXLink priority levels. |
   | `ct` | string | Switchable talkgroups via CTCSS tone (`CTCSS_TO_TG`), raw — e.g. `67.0:8400,69.3:8,71.9:23,74.4:9000`. Format is `tone:tg,tone:tg,…`. **Empty when the hotspot is configured for DTMF-only switching** (SA818PRO always; SA818 / SA868 when the user chose DTMF in `hotspot-config`) — in that case read `cr` and label the row differently (see below). |
-  | `cr` | string | Single input CTCSS tone in DTMF-switching mode — e.g. `88.5`. Sourced from `/usr/sbin/hotspot`'s `--ctcss <tx>,<rx>` on SA818PRO (chip decodes it → GPIO12), or from `svxlink.conf::CTCSS_FQ` on non-PRO chips (svxlink decodes it in software). **Empty in CTCSS-switching mode** (in that case `ct` is populated instead). **Rendering hint** — exactly one of `ct` / `cr` is non-empty per session: use `ct` non-empty to label the row **Input CTCSS → TG**, `cr` non-empty to label it **Input CTCSS → DTMF**. |
+  | `cr` | string | Single input CTCSS tone in DTMF-switching mode — e.g. `88.5`. Sourced from `/usr/sbin/hotspot`'s `--ctcss <tx>,<rx>` — the sa818 chip decodes the tone in hardware and drives GPIO12 as svxlink squelch. Every chip variant (PRO and non-PRO, VHF and UHF) takes this path in DTMF mode. **Empty in CTCSS-switching mode** (in that case `ct` is populated instead). **Rendering hint** — exactly one of `ct` / `cr` is non-empty per session: use `ct` non-empty to label the row **Input CTCSS → TG**, `cr` non-empty to label it **Input CTCSS → DTMF**. |
 
   Example — non-PRO chip, CTCSS-switching mode (per-tone TG mapping):
 

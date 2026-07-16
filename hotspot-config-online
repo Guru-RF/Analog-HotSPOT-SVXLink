@@ -142,25 +142,39 @@ else
   systemctl disable fmchip-monitor
 fi
 
-# Two independent capability flags — must NOT be conflated:
+# Three independent capability flags — must NOT be conflated:
 #
-#   IS_PRO_CHIP   ← chip-name check. Drives EMPHASIS handling and CTCSS
-#                   detection path: PRO has hardware CTCSS decode that
-#                   asserts GPIO12, so svxlink reads squelch off GPIO
-#                   (SQL_DET=GPIOD) and we comment out the CTCSS_*
-#                   decode keys. PRO also handles emphasis itself, so
-#                   DEEMPHASIS=0 / PREEMPHASIS=0 to avoid double shaping.
-#                   The per-tone CTCSS_TO_TG mapping is meaningless on
-#                   PRO, so we skip the mapping prompt and the helper.
+#   IS_PRO_CHIP   ← chip-name check. Only used to FORCE SWITCH_MODE=DTMF
+#                   on SA818PRO: the PRO chip's hardware CTCSS decoder
+#                   is fixed to one tone at a time and drives GPIO12
+#                   directly, so per-tone CTCSS_TO_TG mapping is
+#                   physically impossible. Non-PRO chips (SA818/SA868)
+#                   can pick either mode — SWITCH_MODE then drives
+#                   everything downstream.
 #
-#   IS_NEW_BOARD  ← board-generation check. Drives AUDIO path defaults:
-#                   the 4th-gen board's analog chain wants RFVOL=65 (alsa
-#                   %) and SA818 chip-side filters ENABLED. Older boards
-#                   keep RFVOL=0 (SA818 0–23) and chip filters DISABLED,
-#                   letting svxlink/LADSPA do the shaping.
+#   SWITCH_MODE   ← DTMF or CTCSS. User pick on non-PRO, forced to DTMF
+#                   on PRO. Drives the whole squelch + emphasis story:
+#                     DTMF  — chip does CTCSS decode + audio filtering
+#                             in hardware. svxlink reads squelch off
+#                             GPIO12 (SQL_DET=GPIOD), comments CTCSS_*,
+#                             sets DEEMPHASIS=0/PREEMPHASIS=0. DEFAULT_TG
+#                             becomes the first monitored TG. Same
+#                             treatment for every chip.
+#                     CTCSS — svxlink does software CTCSS decode with a
+#                             per-tone TG mapping (CTCSS_TO_TG). Chip
+#                             stays in pass-through (--ctcss TX,0).
+#                             svxlink/LADSPA do the audio shaping.
 #
-# Either flag can be set independently of the other — e.g. a non-PRO chip
-# on a 4th-gen board takes the new audio defaults but the old CTCSS path.
+#   IS_NEW_BOARD  ← board-generation check. Drives the RF-audio ALSA
+#                   levels: 4th-gen board wants RFVOL=65 (alsa %) vs
+#                   older-board RFVOL=0 (SA818 0–23 scale). Chip-side
+#                   filter enable ALSO fires on this flag OR on
+#                   SWITCH_MODE=DTMF — the DTMF path needs chip filters
+#                   on so emphasis is applied somewhere.
+#
+# All three can be set independently — e.g. a non-PRO chip on an
+# older board with SWITCH_MODE=DTMF still gets chip filters + GPIO12
+# squelch (chip is doing everything) but the older-board ALSA levels.
 IS_PRO_CHIP=0
 if [[ "${CHIPNAME}" == *PRO* ]]; then
   IS_PRO_CHIP=1
@@ -368,8 +382,18 @@ else
 fi
 
 if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
-  # One RX tone for squelch. PRO decodes it in hardware; non-PRO gives
-  # it to svxlink via CTCSS_FQ (single-entry list).
+  # One RX tone for squelch. Every chip variant (SA818 / SA818PRO /
+  # SA868 / VHF or UHF) has the same story in DTMF mode: the chip
+  # decodes the CTCSS tone in hardware, drives its SQ pin, and the
+  # board wires that pin to GPIO12 (Pin 32, "COS input" — see
+  # README.md § GPIO Pin Usage). svxlink then reads squelch off
+  # GPIO12 (SQL_DET=GPIOD) and stays out of the audio-shaping path
+  # entirely — chip does emphasis + band-limiting too (see the
+  # filter-enable line further down, and the SWITCH_MODE=DTMF block
+  # in the apply section that sets DEEMPHASIS=0/PREEMPHASIS=0). This
+  # is the same treatment PRO chips have always had; extending it to
+  # non-PRO in DTMF mode offloads the CTCSS decode from svxlink and
+  # avoids double-emphasis.
   gum style --foreground "#04B575" "Enter RX CTCSS tone (default 88.5) (67.0, 71.9, 74.4, 77.0, 79.7, 82.5, 85.4, 88.5):"
   if [[ "${OLDCTCSSRX}" == "" || "${OLDCTCSSRX}" == "0" ]]; then
     OLDCTCSSRX="88.5"
@@ -379,20 +403,9 @@ if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
     RXTONE="${OLDCTCSSRX}"
   fi
   gum style --foreground 212 "${RXTONE}"
-  # CTCSS_TO_TG stays empty → no per-tone TG switching.
-  CTCSSMAPPING=""
-  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
-    # PRO: chip decodes the tone → GPIO12. svxlink's CTCSS_FQ line is
-    # commented out entirely by the PRO block below, so its value here
-    # doesn't matter. The sa818 chip needs the RX tone though.
-    CTCSSRX="${RXTONE}"
-    CTCSSLIST=""
-  else
-    # Non-PRO: chip pass-through (--ctcss TX,0), svxlink decodes the
-    # single tone via CTCSS_FQ=<tone>.
-    CTCSSRX=0
-    CTCSSLIST="${RXTONE}"
-  fi
+  CTCSSMAPPING=""       # CTCSS_TO_TG stays empty → no per-tone TG switching
+  CTCSSRX="${RXTONE}"   # chip decodes this tone, its SQ pin drives GPIO12
+  CTCSSLIST=""          # CTCSS_FQ gets commented in the DTMF-apply block
 else
   # CTCSS mode is non-PRO only (PRO forces DTMF above).
   gum style --foreground "#04B575" "Enter CTCSS tone mapping (<tone>:<talkgroup>,...) (67:4,69.3:8,71.9:6,74.4:23,77.0:1745,79.7:8400,82.5:2300,85.4:9000,88.5:8401):"
@@ -611,32 +624,35 @@ if [ $RESULT -eq 0 ]; then
     fi
   fi
 
-  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
-    say "Applying SA818PRO-specific overrides to svxlink.conf"
-    # Squelch moves from svxlink's CTCSS decoder to GPIO12, driven by the
-    # PRO chip's own hardware CTCSS decoder. Comment the old keys and
-    # write the GPIOD trio in their place.
-    # NOTE: just $ (not \s*$) — \s would eat the line's trailing newline
-    # and the inserted block would run straight into the next config line.
+  # DTMF-mode overrides — apply to every chip variant (was PRO-only
+  # before). In DTMF mode the sa818 chip handles the whole signal
+  # chain in hardware:
+  #   - CTCSS decode → drives its SQ pin → wired to GPIO12 (COS input,
+  #     see README.md § GPIO Pin Usage). svxlink reads squelch off
+  #     GPIO12 via SQL_DET=GPIOD; the CTCSS_* keys get commented so
+  #     svxlink doesn't also try to software-decode.
+  #   - Emphasis + band-limiting → chip filters (see the filter-enable
+  #     block further down which now also fires on SWITCH_MODE=DTMF).
+  #     DEEMPHASIS=0/PREEMPHASIS=0 in svxlink so we don't shape twice.
+  #
+  # No per-tone CTCSS→TG mapping is in effect either, so DEFAULT_TG=0
+  # would leave the user parked on nothing and having to dial in on
+  # every boot — set it to the first entry of MONITOR_TGS.
+  #
+  # NOTE: $ (not \s*$) on the SQL_DET rewrite — \s would eat the
+  # trailing newline and the inserted block would run straight into
+  # the next config line. sed (not tr -d) on the per-line TG strip:
+  # tr's [:space:] eats the newlines we just inserted with tr ',' '\n'
+  # and collapses everything into one giant fake TG number.
+  if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
+    say "Applying DTMF-mode overrides to svxlink.conf (chip-driven squelch + emphasis)"
     perl -i -pe 's/^(SQL_DET=CTCSS)$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf
-    # PRO chip handles emphasis itself — turn svxlink's de/pre-emphasis
-    # off so the audio isn't shaped twice.
-    perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/' /etc/svxlink/svxlink.conf
+    perl -i -pe 's/^DEEMPHASIS=.*$/DEEMPHASIS=0/'  /etc/svxlink/svxlink.conf
     perl -i -pe 's/^PREEMPHASIS=.*$/PREEMPHASIS=0/' /etc/svxlink/svxlink.conf
-  fi
 
-  # DTMF switching (PRO always, or non-PRO if the user chose it above):
-  # no per-tone CTCSS→TG mapping is in effect, so DEFAULT_TG=0 would
-  # leave the user parked on nothing and having to dial in every boot.
-  # Make DEFAULT_TG the first entry in MONITOR_TGS (stripping "+"
-  # priority markers + whitespace) so the box comes up on their primary
-  # TG. sed — not tr -d — on the per-line strip: tr's [:space:] eats
-  # the newlines we just inserted with tr ',' '\n' and collapses
-  # everything into one giant fake TG number.
-  if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
     FIRST_TG=$(echo "${TGS}" | tr ',' '\n' | sed 's/[+[:space:]]//g' | grep -E '^[0-9]+$' | head -n1)
     if [[ -n "${FIRST_TG}" ]]; then
       say "Setting DEFAULT_TG=${FIRST_TG} (first monitored TG) — DTMF switching, no per-tone CTCSS mapping"
@@ -650,11 +666,20 @@ if [ $RESULT -eq 0 ]; then
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
   echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},${CTCSSRX} --squelch 8" >> /usr/sbin/hotspot
-  # Filter selection follows the BOARD generation (audio path), NOT the
-  # chip type. 4th-gen boards want the chip-side filters on; older boards
-  # sound better with svxlink/LADSPA doing the shaping, so leave the
-  # chip filters off.
-  if [[ "${IS_NEW_BOARD}" == "1" ]]; then
+  # Chip-side filter enable fires on either signal:
+  #   IS_NEW_BOARD=1  — 4th-gen audio path wants chip-side filters on
+  #                     regardless of switching mode; older boards
+  #                     otherwise let svxlink/LADSPA do the shaping.
+  #   SWITCH_MODE=DTMF — in DTMF mode the chip already handles CTCSS
+  #                     decode + drives GPIO12 for squelch, so let it
+  #                     do emphasis + band-limiting too. svxlink stays
+  #                     out of the audio path (DEEMPHASIS=0/PREEMPHASIS=0
+  #                     in the DTMF apply block above), so we MUST turn
+  #                     the chip filters on or emphasis is missing
+  #                     everywhere. This is the same shape PRO chips
+  #                     already had; the change extends it to non-PRO
+  #                     DTMF on older boards too.
+  if [[ "${IS_NEW_BOARD}" == "1" || "${SWITCH_MODE}" == "DTMF" ]]; then
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
   else
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot

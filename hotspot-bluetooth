@@ -522,26 +522,33 @@ class ConfigCharacteristic(Characteristic):
         # or if we can't determine it — the client should then render
         # `ct` (the mapping) instead.
         #
-        # Two data sources depending on the chip:
-        #   1. SA818PRO in DTMF mode — /usr/sbin/hotspot has
-        #      `--ctcss <tx>,<rx>` with rx = the user-chosen tone (PRO
-        #      chip decodes it in hardware and drives GPIO12 as squelch).
-        #      A non-zero rx in the hotspot script is only ever written
-        #      by the PRO DTMF path, so we return it immediately.
-        #   2. Plain SA818 / SA868 in DTMF mode — /usr/sbin/hotspot has
-        #      `--ctcss <tx>,0` (chip pass-through) and the actual tone
-        #      lives in svxlink.conf as CTCSS_FQ=<tone> (single value,
-        #      svxlink does the decoding).
-        #   3. Plain SA818 / SA868 in CTCSS mode — CTCSS_FQ is derived
-        #      from the mapping keys. Usually multi-tone (comma-joined),
-        #      BUT a 1-entry mapping produces a bare single tone with no
+        # Data sources:
+        #   1. Any chip in DTMF mode — /usr/sbin/hotspot has
+        #      `--ctcss <tx>,<rx>` with rx = the user-chosen tone. The
+        #      sa818 chip decodes it in hardware and drives its SQ pin
+        #      (wired to GPIO12 per README.md § GPIO Pin Usage) as
+        #      svxlink squelch. PRO and non-PRO look identical here
+        #      since hotspot-config-online routes every DTMF-mode box
+        #      through the chip's hardware decoder. A non-zero rx in
+        #      the hotspot script always means DTMF mode; return it
+        #      immediately.
+        #   2. Legacy non-PRO DTMF (pre-refactor) — /usr/sbin/hotspot
+        #      has `--ctcss <tx>,0` (chip pass-through) and the tone
+        #      lives in svxlink.conf as CTCSS_FQ=<single tone>
+        #      (svxlink did the decode in software). Falls away once
+        #      the user re-runs hotspot-config; the fallback keeps
+        #      installs upgrading in the interim from showing an empty
+        #      cr.
+        #   3. CTCSS-switching mode — CTCSS_FQ is derived from the
+        #      mapping keys. Usually multi-tone (comma-joined), BUT a
+        #      1-entry mapping produces a bare single tone with no
         #      comma — indistinguishable from case 2 by CTCSS_FQ shape
         #      alone. The actual discriminator is CTCSS_TO_TG being
-        #      empty (empty ⇒ DTMF, non-empty ⇒ CTCSS-map), so gate the
-        #      fallback on that. Without this gate, ct AND cr would
-        #      both be populated for the shipped-default single-pair
-        #      mapping, breaking the "exactly one is set" client
-        #      rendering contract in BLE.md.
+        #      empty (empty ⇒ DTMF, non-empty ⇒ CTCSS-map), so gate
+        #      the fallback on that. Without this gate, ct AND cr
+        #      would both be populated for the shipped-default
+        #      single-pair mapping, breaking the "exactly one is set"
+        #      client rendering contract in BLE.md.
         try:
             with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:
@@ -651,10 +658,11 @@ class StateFeed:
     def _read_tx_ctcss(self):
         # CTCSS TX tone — hotspot-config writes `--ctcss <tx>,<rx>` into
         # /usr/sbin/hotspot. We want the value before the comma (TX).
-        # The RX slot is a real tone on SA818PRO in DTMF mode (chip does
-        # hardware decode → GPIO12) and 0 otherwise (chip pass-through;
-        # svxlink handles CTCSS decode via CTCSS_FQ in svxlink.conf).
-        # See ConfigCharacteristic._read_rx_ctcss for the RX side.
+        # The RX slot is a real tone whenever the box is in DTMF-switching
+        # mode (chip does hardware decode → GPIO12, for every chip
+        # variant); 0 in CTCSS-switching mode (chip pass-through, svxlink
+        # software-decodes via CTCSS_FQ). See
+        # ConfigCharacteristic._read_rx_ctcss for the RX side.
         try:
             with open(HOTSPOT_SCRIPT, "r", encoding="utf-8", errors="replace") as f:
                 for line in f:

@@ -39,28 +39,37 @@ if [ -z "$OLDRFVOL" ]; then
   OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
 fi
 
-gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
-AFVOL=$(gum input --value "${OLDAFVOL:-77}")
+# AFVOL / RFVOL defaults are codec-specific — TLV320's PGA stage
+# runs hot (~31 dB per 65%), so RX wants to stay low (20%) while TX
+# benefits from more headroom (85%). WM8960 keeps its historical
+# 77/19 defaults.
+if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+  AFDEFAULT=85
+  RFDEFAULT=20
+else
+  AFDEFAULT=77
+  RFDEFAULT=19
+fi
+
+gum style --foreground "#04B575" "Enter AF output volume [50-99] (default ${AFDEFAULT}):"
+AFVOL=$(gum input --value "${OLDAFVOL:-${AFDEFAULT}}")
 # Defensive: gum can print an error string to stdout when it can't
 # open a TTY (running headless, in a CI shell, etc.) and that string
 # would otherwise land in the generated /usr/sbin/hotspot_volume as a
 # bogus amixer value. Insist on a bare integer.
 if ! [[ "${AFVOL}" =~ ^[0-9]+$ ]]; then
-  AFVOL=77
+  AFVOL=${AFDEFAULT}
 fi
 gum style --foreground 212 "${AFVOL}"
 
 # Range hint differs per codec. TLV320's PGA Level is 0-100% (ALSA).
 # WM8960's Capture is 0-100% too but the useful range was narrower.
 if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65):"
-  RFVOL=$(gum input --value "${OLDRFVOL:-65}")
-  RFDEFAULT=65
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default ${RFDEFAULT}):"
 else
-  gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 19):"
-  RFVOL=$(gum input --value "${OLDRFVOL:-19}")
-  RFDEFAULT=19
+  gum style --foreground "#04B575" "Enter RF input volume [17-23] (default ${RFDEFAULT}):"
 fi
+RFVOL=$(gum input --value "${OLDRFVOL:-${RFDEFAULT}}")
 if ! [[ "${RFVOL}" =~ ^[0-9]+$ ]]; then
   RFVOL=${RFDEFAULT}
 fi

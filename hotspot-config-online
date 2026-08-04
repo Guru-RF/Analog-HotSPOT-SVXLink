@@ -612,13 +612,23 @@ fi
 TGS=$(gum input --value "${OLDTGS}")
 gum style --foreground 212 "${TGS}"
 
-gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
-AFVOL=77
+# AFVOL / RFVOL defaults are codec-specific. TLV320AIC3204 (REV 6+)
+# wants a hotter TX drive (85%) and a much lower RX gain (20%) than
+# the WM8960 analog chain did — the codec's PGA stage runs at
+# ~31 dB per 65% (see amixer sget 'PGA Level' output), so 65% would
+# ride the sa818's line-out into clipping.
+if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+  gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 85 for TLV320AIC3204):"
+  AFVOL=85
+else
+  gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
+  AFVOL=77
+fi
 gum style --foreground 212 "${AFVOL}"
 
 if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for TLV320AIC3204 board):"
-  RFVOL=65
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 20 for TLV320AIC3204):"
+  RFVOL=20
 elif [[ "${IS_NEW_BOARD}" == "1" ]]; then
   gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for 4th-gen board):"
   RFVOL=65

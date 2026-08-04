@@ -11,10 +11,18 @@
 # AFVOL = playback level (audio TO the sa818 mic — TX side)
 # RFVOL = capture level (audio FROM the sa818 speaker — RX side)
 
-AFVOL=${AFVOL:-77}
-RFVOL=${RFVOL:-65}
-
 CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+
+# Sensible per-codec defaults if AFVOL/RFVOL weren't passed in. TLV320
+# runs its PGA hot (~31 dB per 65%) so it wants a low RX gain (20)
+# and a higher TX drive (85). WM8960 keeps its historical values.
+if [[ "$CODEC" == "TLV320AIC3204" ]]; then
+  AFVOL=${AFVOL:-85}
+  RFVOL=${RFVOL:-20}
+else
+  AFVOL=${AFVOL:-77}
+  RFVOL=${RFVOL:-65}
+fi
 
 case "$CODEC" in
   TLV320AIC3204)

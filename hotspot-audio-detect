@@ -1,0 +1,70 @@
+#!/bin/bash
+# Detect the audio codec fitted to the RF.Guru hotspot HAT.
+#
+# Two boards are in the field:
+#
+#   OLD (REV 1..~5) — Wolfson WM8960 at I²C 0x1a, driven by Waveshare's
+#     out-of-tree `wm8960-soundcard.ko` (cloned + built by
+#     install-radiomodule.sh from waveshare/WM8960-Audio-HAT). Kicked
+#     at boot by `wm8960-soundcard.service` calling `/usr/bin/wm8960-soundcard`.
+#
+#   NEW (REV 6+) — TI TLV320AIC3204 at I²C 0x18 with an external 12 MHz
+#     oscillator (X1 on the schematic) and RST# on GPIO26. Driven by
+#     the in-tree `snd-soc-tlv320aic32x4` driver via the `audiosense-pi`
+#     dtoverlay (which happens to declare exactly this wiring:
+#     tlv320aic32x4@18, codec-rst on GPIO 0x1a=26, 12 MHz fixed clock).
+#     No userspace helper needed — the kernel driver is enough.
+#
+# Detection order:
+#
+#   1. /proc/asound/cards. Fast, reliable once the codec's dtoverlay
+#      has already loaded (i.e. every subsequent boot after install).
+#      Card name uniquely identifies the codec.
+#
+#   2. I²C probe as fallback. Needed at install time BEFORE any overlay
+#      is loaded, or when the currently-loaded overlay is for the other
+#      codec (fresh image with wm8960-soundcard on a REV6 board = the
+#      condition we started from). GPIO26 is held low by the board
+#      until whichever driver owns it releases it, so we briefly poke
+#      it high ourselves so a TLV320 answers on I²C. --mode=exit sets
+#      the value and returns; the driven level persists long enough
+#      for i2cdetect to run.
+#
+# Output: prints ONE of TLV320AIC3204, WM8960, UNKNOWN. Always exit 0
+# so callers can `CODEC=$(hotspot-audio-detect)` without guards.
+
+# 1. Try /proc/asound/cards first
+if [ -r /proc/asound/cards ]; then
+  if grep -qi 'audiosense-pi\|audiosensepi\|tlv320aic3204' /proc/asound/cards 2>/dev/null; then
+    echo "TLV320AIC3204"
+    exit 0
+  fi
+  if grep -qi 'wm8960' /proc/asound/cards 2>/dev/null; then
+    echo "WM8960"
+    exit 0
+  fi
+fi
+
+# 2. Fallback: I²C probe. Release GPIO26 (TLV320 RST#) briefly.
+# Harmless on old boards — GPIO26 isn't used by the WM8960 chain.
+if command -v gpioset >/dev/null 2>&1; then
+  gpioset --mode=exit -B pull-up gpiochip0 26=1 >/dev/null 2>&1 || true
+  sleep 0.2
+fi
+
+if command -v i2cdetect >/dev/null 2>&1; then
+  SCAN=$(i2cdetect -y 1 2>/dev/null | tail -n +2 | tr -s ' ' '\n' | grep -E '^[0-9a-f]{2}$' || true)
+  # TLV320AIC3204 default I²C address (SPI_SELECT tied low)
+  if grep -Fxq '18' <<< "$SCAN"; then
+    echo "TLV320AIC3204"
+    exit 0
+  fi
+  # WM8960 default I²C address
+  if grep -Fxq '1a' <<< "$SCAN"; then
+    echo "WM8960"
+    exit 0
+  fi
+fi
+
+echo "UNKNOWN"
+exit 0

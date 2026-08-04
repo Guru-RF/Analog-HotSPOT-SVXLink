@@ -16,10 +16,34 @@ say() {
 	printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
-say "Updateing WM8960 audio interface"
-# test audio files https://www2.cs.uic.edu/~i101/SoundFiles/
-cd /tmp
-run "git clone https://github.com/waveshare/WM8960-Audio-HAT"
-cd WM8960-Audio-HAT/
-run "./install.sh"
-cd -
+say "Refreshing hotspot-audio-detect from upstream"
+if wget -q -O /tmp/hotspot-audio-detect.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-audio-detect 2>/dev/null \
+   && [ -s /tmp/hotspot-audio-detect.new ]; then
+  install -m 755 /tmp/hotspot-audio-detect.new /usr/local/bin/hotspot-audio-detect
+  rm -f /tmp/hotspot-audio-detect.new
+else
+  say "Could not refresh hotspot-audio-detect (offline?), using installed copy"
+  rm -f /tmp/hotspot-audio-detect.new
+fi
+
+say "Detecting audio codec"
+AUDIO_CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+say "Detected codec: ${AUDIO_CODEC}"
+
+case "$AUDIO_CODEC" in
+  TLV320AIC3204)
+    say "TLV320AIC3204 codec (in-tree driver) — nothing to rebuild. Ensuring dtoverlay is set."
+    run "sed -i '/^dtoverlay=wm8960-soundcard/d' /boot/firmware/config.txt"
+    run "grep -q '^dtoverlay=audiosense-pi' /boot/firmware/config.txt || echo 'dtoverlay=audiosense-pi' >> /boot/firmware/config.txt"
+    ;;
+  WM8960|*)
+    say "Updating WM8960 audio interface"
+    # test audio files https://www2.cs.uic.edu/~i101/SoundFiles/
+    cd /tmp
+    run "rm -rf WM8960-Audio-HAT"
+    run "git clone https://github.com/waveshare/WM8960-Audio-HAT"
+    cd WM8960-Audio-HAT/
+    run "./install.sh"
+    cd -
+    ;;
+esac

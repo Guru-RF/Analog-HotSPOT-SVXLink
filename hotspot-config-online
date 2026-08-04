@@ -58,6 +58,16 @@ else
   rm -f /tmp/sa818.new
 fi
 
+say "Refreshing hotspot-audio-detect from upstream"
+if wget -q -O /tmp/hotspot-audio-detect.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-audio-detect 2>/dev/null \
+   && [ -s /tmp/hotspot-audio-detect.new ]; then
+  install -m 755 /tmp/hotspot-audio-detect.new /usr/local/bin/hotspot-audio-detect
+  rm -f /tmp/hotspot-audio-detect.new
+else
+  say "Could not refresh hotspot-audio-detect (offline?), using installed copy"
+  rm -f /tmp/hotspot-audio-detect.new
+fi
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next
@@ -185,9 +195,69 @@ if [[ "${DETECTED_GENERATION}" == "4" ]]; then
   IS_NEW_BOARD=1
 fi
 
+# Audio codec detection. Two codecs are in the field:
+#   WM8960          — old boards, out-of-tree Waveshare driver + userspace
+#                     helper (wm8960-soundcard.service).
+#   TLV320AIC3204   — REV 6+ boards, in-tree snd-soc-tlv320aic32x4 driver
+#                     loaded via the audiosense-pi dtoverlay.
+# The board-generation strap doesn't distinguish them (REV 6 keeps the
+# 4th-gen strap pattern) so we probe the I²C bus. See
+# /usr/local/bin/hotspot-audio-detect for the probe details.
+AUDIO_CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+say "Audio codec: ${AUDIO_CODEC}"
+if [[ "${AUDIO_CODEC}" == "UNKNOWN" ]]; then
+  say "WARNING: no known audio codec on I²C — assuming WM8960 for backwards compat"
+  AUDIO_CODEC="WM8960"
+fi
+
+# Reconcile /boot/firmware/config.txt with the detected codec. Fresh
+# images ship with dtoverlay=wm8960-soundcard; a REV 6 board with that
+# overlay produces "no soundcards found" (WM8960 driver probes I²C
+# 0x1a which isn't there). Same story in reverse if someone re-flashes
+# an old board with a REV6-shaped image. Swap the overlay in place;
+# takes effect on next boot (a reboot is prompted at the end anyway).
+CONFIG_TXT="/boot/firmware/config.txt"
+if [ -f "$CONFIG_TXT" ]; then
+  case "$AUDIO_CODEC" in
+    TLV320AIC3204)
+      if grep -qE '^dtoverlay=wm8960-soundcard' "$CONFIG_TXT"; then
+        say "  removing dtoverlay=wm8960-soundcard from ${CONFIG_TXT} (wrong codec for this board)"
+        sed -i '/^dtoverlay=wm8960-soundcard/d' "$CONFIG_TXT"
+      fi
+      if ! grep -qE '^dtoverlay=audiosense-pi' "$CONFIG_TXT"; then
+        say "  adding dtoverlay=audiosense-pi to ${CONFIG_TXT} (TLV320AIC3204 driver)"
+        echo 'dtoverlay=audiosense-pi' >> "$CONFIG_TXT"
+      fi
+      # WM8960 userspace helper is now inert. Stop + disable so it
+      # doesn't log failures on every boot.
+      systemctl disable --now wm8960-soundcard.service >/dev/null 2>&1 || true
+      ;;
+    WM8960)
+      if grep -qE '^dtoverlay=audiosense-pi' "$CONFIG_TXT"; then
+        say "  removing dtoverlay=audiosense-pi from ${CONFIG_TXT} (wrong codec for this board)"
+        sed -i '/^dtoverlay=audiosense-pi/d' "$CONFIG_TXT"
+      fi
+      if ! grep -qE '^dtoverlay=wm8960-soundcard' "$CONFIG_TXT"; then
+        say "  adding dtoverlay=wm8960-soundcard to ${CONFIG_TXT} (WM8960 driver)"
+        echo 'dtoverlay=wm8960-soundcard' >> "$CONFIG_TXT"
+      fi
+      ;;
+  esac
+fi
+
 OLDCPVOL=$(grep volume /usr/sbin/hotspot 2>/dev/null | awk '{ print $6 }' | tail -n 1)
-OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
-OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
+# OLDAFVOL / OLDRFVOL come from the previously-generated hotspot_volume;
+# control names differ per codec. TLV320AIC3204 uses `PCM` (playback)
+# and `PGA Level` (capture); WM8960 uses `Headphone` (playback) and
+# `Capture` (capture). Try TLV320 lines first, then fall back to WM8960.
+OLDAFVOL=$(grep -E "sset 'PCM' " /usr/sbin/hotspot_volume 2>/dev/null | head -n1 | grep -oE '[0-9]+%' | head -n1 | tr -d '%')
+if [ -z "$OLDAFVOL" ]; then
+  OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
+fi
+OLDRFVOL=$(grep -E "sset 'PGA Level' " /usr/sbin/hotspot_volume 2>/dev/null | head -n1 | grep -oE '[0-9]+%' | head -n1 | tr -d '%')
+if [ -z "$OLDRFVOL" ]; then
+  OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
+fi
 OLDFREQ=$(grep freq /usr/sbin/hotspot 2>/dev/null | head -n1 | awk '{ print $8 }')
 
 # Read old CTCSS *TX* tone from [Tx1] section in svxlink.conf
@@ -546,7 +616,10 @@ gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
 AFVOL=77
 gum style --foreground 212 "${AFVOL}"
 
-if [[ "${IS_NEW_BOARD}" == "1" ]]; then
+if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for TLV320AIC3204 board):"
+  RFVOL=65
+elif [[ "${IS_NEW_BOARD}" == "1" ]]; then
   gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for 4th-gen board):"
   RFVOL=65
 else
@@ -689,15 +762,38 @@ if [ $RESULT -eq 0 ]; then
 
   run "/usr/sbin/hotspot"
 
-  say "Configuring hotspot volume"
+  say "Configuring hotspot volume (${AUDIO_CODEC})"
   echo "#!/bin/bash" > /usr/sbin/hotspot_volume
   echo "" >> /usr/sbin/hotspot_volume
-  echo "# audio to radio Module" >> /usr/sbin/hotspot_volume
-  echo "amixer set 'Headphone' ${AFVOL}%" >> /usr/sbin/hotspot_volume
-  echo "# audio from radio Module" >> /usr/sbin/hotspot_volume
-  echo "amixer set 'Capture' ${RFVOL}%" >> /usr/sbin/hotspot_volume
-  echo "" >> /usr/sbin/hotspot_volume
-  cat <<'EOF' >> /usr/sbin/hotspot_volume
+
+  if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+    cat <<EOF >> /usr/sbin/hotspot_volume
+# TLV320AIC3204 (audiosense-pi overlay) — REV 6+ boards.
+# Board audio path (schematic sheet 2):
+#   codec LOL (pin 22) -> transformer T1 -> sa818 MIC_IN
+#   codec IN1_L (pin 13) <- transformer T2 <- sa818 AF_OUT
+# Left channel only; right side is unused on this board.
+
+# Playback (LOL -> sa818 MIC)
+amixer -c 0 sset 'PCM' ${AFVOL}%             > /dev/null
+amixer -c 0 sset 'LO DAC' on                 > /dev/null
+amixer -c 0 sset 'LO Driver Gain' 0dB        > /dev/null
+amixer -c 0 sset 'LOL Output Mixer L_DAC' on > /dev/null
+
+# Capture (sa818 AF_OUT -> IN1_L -> PGA -> ADC)
+amixer -c 0 sset 'Mic PGA' on                                        > /dev/null
+amixer -c 0 sset 'IN1_L to Left Mixer Positive Resistor' '10 kOhm'   > /dev/null
+amixer -c 0 sset 'ADCFGA Left Mute' off                              > /dev/null
+amixer -c 0 sset 'PGA Level' ${RFVOL}%                               > /dev/null
+amixer -c 0 sset 'ADC Level' 80%                                     > /dev/null
+EOF
+  else
+    echo "# audio to radio Module" >> /usr/sbin/hotspot_volume
+    echo "amixer set 'Headphone' ${AFVOL}%" >> /usr/sbin/hotspot_volume
+    echo "# audio from radio Module" >> /usr/sbin/hotspot_volume
+    echo "amixer set 'Capture' ${RFVOL}%" >> /usr/sbin/hotspot_volume
+    echo "" >> /usr/sbin/hotspot_volume
+    cat <<'EOF' >> /usr/sbin/hotspot_volume
 # Disable ALC en Deemphasis
 amixer cset iface=MIXER,name='DAC Deemphasis Switch' 0
 amixer cset iface=MIXER,name='ALC Function' 0
@@ -710,8 +806,18 @@ amixer cset iface=MIXER,name='ALC Max Gain' 0
 amixer cset iface=MIXER,name='ALC Min Gain' 0
 amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0
 EOF
+  fi
+  chmod +x /usr/sbin/hotspot_volume
 
-  run "/usr/sbin/hotspot_volume > /dev/null 2>&1"
+  # Only run the generated volume script if a sound card is already
+  # up. On a codec-swap run (audiosense-pi just added, wm8960 just
+  # removed) the card won't appear until reboot; leaving hotspot_volume
+  # in place is enough — svxlink_checkalsa runs it at next boot.
+  if aplay -l 2>/dev/null | grep -qE '^card [0-9]'; then
+    run "/usr/sbin/hotspot_volume > /dev/null 2>&1"
+  else
+    say "No sound card active yet — hotspot_volume will apply on next reboot"
+  fi
 
   systemctl restart svxlink
   systemctl restart fmchip-monitor
@@ -836,6 +942,16 @@ EOF
   say "Downloading install-svxlink-watchdog"
   run "wget -O /usr/sbin/install-svxlink-watchdog https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-svxlink-watchdog.sh > /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-svxlink-watchdog"
+
+  # svxlink_checkalsa gets pulled in the same block so existing boxes
+  # pick up the codec-agnostic wait (drops the WM8960-only card-name
+  # grep). Static hotspot_volume is also refreshed for boxes that
+  # never re-ran hotspot-config: the codec-detecting fallback in the
+  # static copy is what runs at first boot before hotspot-config
+  # generates a codec-specific one.
+  say "Downloading svxlink_checkalsa"
+  run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/svxlink_checkalsa"
   say "--> Done"
   say ""
   say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"

@@ -1,15 +1,25 @@
 #!/bin/bash
+# ExecStartPre for svxlink.service / remotetrx.service: wait for the
+# sound card to be ready, then apply hotspot_volume.
+#
+# Codec-agnostic. Handles both:
+#   WM8960 (old boards) — out-of-tree driver kicked by /usr/bin/wm8960-soundcard
+#   TLV320AIC3204 (REV 6+) — in-tree driver, loaded automatically by the
+#                            audiosense-pi dtoverlay; no helper needed.
+#
+# The WM8960 helper is called only if it's installed (won't be on REV
+# 6+ boxes since install-radiomodule.sh skips the Waveshare install
+# there). After that we just poll aplay -l for any card to appear;
+# whichever codec is present will show up within a few seconds.
 
-VAL=1
+[ -x /usr/bin/wm8960-soundcard ] && /usr/bin/wm8960-soundcard >/dev/null 2>&1 || true
 
-/usr/bin/wm8960-soundcard
-
-while [[ "${VAL}" != "0" ]]
-do
-        echo "Waiting for sound driver"
-        aplay -l | grep wm8960soundcard
-        VAL=$?
-        sleep 1
+for i in $(seq 1 30); do
+  if aplay -l 2>/dev/null | grep -qE '^card [0-9]'; then
+    break
+  fi
+  echo "Waiting for sound driver ($i/30)"
+  sleep 1
 done
 
 /usr/sbin/hotspot_volume

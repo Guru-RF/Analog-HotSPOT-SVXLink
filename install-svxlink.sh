@@ -52,6 +52,9 @@ run "cp svxlink_rotate /usr/sbin"
 run "chmod a+x /usr/sbin/svxlink_rotate"
 run "ln -s /usr/sbin/svxlink_rotate /etc/cron.daily/svxlink_rotate"
 
+say "Install hotspot-audio-detect (codec probe used by hotspot_volume + hotspot-config)"
+run "install -m 755 hotspot-audio-detect /usr/local/bin/hotspot-audio-detect"
+
 say "Install svxlink_checkalsa"
 run "cp svxlink_checkalsa /usr/sbin"
 run "chmod a+x /usr/sbin/svxlink_checkalsa"

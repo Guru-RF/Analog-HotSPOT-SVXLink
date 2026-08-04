@@ -1,18 +1,57 @@
 #!/bin/bash
+# Apply audio levels + one-time codec routing/mute setup.
+#
+# hotspot-config regenerates this file with the user-chosen AFVOL/RFVOL
+# baked in; this static copy is what install-radiomodule.sh drops into
+# /usr/sbin at first install, before hotspot-config has ever run. Both
+# copies are codec-aware: they call hotspot-audio-detect and pick the
+# right amixer sequence for the WM8960 (old boards) or TLV320AIC3204
+# (REV 6+ boards).
+#
+# AFVOL = playback level (audio TO the sa818 mic — TX side)
+# RFVOL = capture level (audio FROM the sa818 speaker — RX side)
 
-# audio to radio Module
-amixer set 'Headphone' 65%
-# audio from radio Module
-amixer set 'Capture' 19%
+AFVOL=${AFVOL:-77}
+RFVOL=${RFVOL:-65}
 
-# Disable ALC en Deemphasis
-amixer cset iface=MIXER,name='DAC Deemphasis Switch' 0
-amixer cset iface=MIXER,name='ALC Function' 0
-amixer cset iface=MIXER,name='ALC Target' 0
-amixer cset iface=MIXER,name='ALC Mode' 1
-amixer cset iface=MIXER,name='ALC Attack' 0
-amixer cset iface=MIXER,name='ALC Decay' 0
-amixer cset iface=MIXER,name='ALC Hold Time' 0
-amixer cset iface=MIXER,name='ALC Max Gain' 0
-amixer cset iface=MIXER,name='ALC Min Gain' 0
-amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0
+CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+
+case "$CODEC" in
+  TLV320AIC3204)
+    # Board audio path (schematic sheet 2):
+    #   codec LOL (line-out left, pin 22) → transformer T1 → sa818 MIC_IN
+    #   codec IN1_L (input 1 left, pin 13) ← transformer T2 ← sa818 AF_OUT
+    # Left channel only; right side is unused on this board.
+    #
+    # Playback (LOL → sa818 MIC):
+    amixer -c 0 sset 'PCM' ${AFVOL}%             >/dev/null
+    amixer -c 0 sset 'LO DAC' on                 >/dev/null
+    amixer -c 0 sset 'LO Driver Gain' 0dB        >/dev/null
+    amixer -c 0 sset 'LOL Output Mixer L_DAC' on >/dev/null
+    # Capture (sa818 AF_OUT → IN1_L → PGA → ADC):
+    amixer -c 0 sset 'Mic PGA' on                                        >/dev/null
+    amixer -c 0 sset 'IN1_L to Left Mixer Positive Resistor' '10 kOhm'   >/dev/null
+    amixer -c 0 sset 'ADCFGA Left Mute' off                              >/dev/null
+    amixer -c 0 sset 'PGA Level' ${RFVOL}%                               >/dev/null
+    amixer -c 0 sset 'ADC Level' 80%                                     >/dev/null
+    ;;
+
+  WM8960|*)
+    # audio to radio Module
+    amixer set 'Headphone' ${AFVOL}%
+    # audio from radio Module
+    amixer set 'Capture' ${RFVOL}%
+
+    # Disable ALC en Deemphasis
+    amixer cset iface=MIXER,name='DAC Deemphasis Switch' 0
+    amixer cset iface=MIXER,name='ALC Function' 0
+    amixer cset iface=MIXER,name='ALC Target' 0
+    amixer cset iface=MIXER,name='ALC Mode' 1
+    amixer cset iface=MIXER,name='ALC Attack' 0
+    amixer cset iface=MIXER,name='ALC Decay' 0
+    amixer cset iface=MIXER,name='ALC Hold Time' 0
+    amixer cset iface=MIXER,name='ALC Max Gain' 0
+    amixer cset iface=MIXER,name='ALC Min Gain' 0
+    amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0
+    ;;
+esac

@@ -34,12 +34,41 @@ run "echo 'en_US.UTF-8 UTF-8' > /etc/locale.gen"
 
 run "locale-gen"
 
-say "Installing WM8960 audio interface"
-# test audio files https://www2.cs.uic.edu/~i101/SoundFiles/
-run "git clone https://github.com/waveshare/WM8960-Audio-HAT"
-cd WM8960-Audio-HAT/
-run "./install.sh"
-cd ..
+say "Installing audio codec detector"
+run "install -m 755 hotspot-audio-detect /usr/local/bin/hotspot-audio-detect"
+
+# i2c-tools + libgpiod are needed by hotspot-audio-detect. Both are
+# usually already present but we install explicitly so a bare image
+# doesn't fail the codec probe.
+run "apt -y install i2c-tools libgpiod-dev gpiod"
+
+say "Detecting audio codec on I²C bus"
+AUDIO_CODEC=$(/usr/local/bin/hotspot-audio-detect)
+say "Detected codec: ${AUDIO_CODEC}"
+
+case "$AUDIO_CODEC" in
+  TLV320AIC3204)
+    # REV 6+ board — in-tree kernel driver + ready-made overlay. No
+    # git clone, no DKMS, no userspace helper. The audiosense-pi
+    # overlay declares exactly this board's wiring (tlv320aic32x4@18,
+    # RST# on GPIO26, 12 MHz external oscillator on X1).
+    say "Configuring TLV320AIC3204 (audiosense-pi overlay, in-tree driver)"
+    run "sed -i '/^dtoverlay=wm8960-soundcard/d' /boot/firmware/config.txt"
+    run "grep -q '^dtoverlay=audiosense-pi' /boot/firmware/config.txt || echo 'dtoverlay=audiosense-pi' >> /boot/firmware/config.txt"
+    ;;
+  WM8960|*)
+    if [ "$AUDIO_CODEC" = "UNKNOWN" ]; then
+      say "WARNING: no known codec found on I²C — falling back to WM8960 install"
+    fi
+    say "Installing WM8960 audio interface"
+    # test audio files https://www2.cs.uic.edu/~i101/SoundFiles/
+    run "git clone https://github.com/waveshare/WM8960-Audio-HAT"
+    cd WM8960-Audio-HAT/
+    run "./install.sh"
+    cd ..
+    run "sed -i '/^dtoverlay=audiosense-pi/d' /boot/firmware/config.txt"
+    ;;
+esac
 
 # Disable hdmi-audio and enable serial uart
 say "Disabling audio"

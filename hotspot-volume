@@ -15,32 +15,89 @@ say () {
   printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
 }
 
-OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
-OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume | awk '{ print $4}'| tail -n 1 | sed 's/%$//')
+# Codec-aware: TLV320AIC3204 (REV 6+) uses `PCM` for playback and
+# `PGA Level` for capture (both ALSA %), WM8960 (older boards) uses
+# `Headphone` and `Capture`. hotspot-audio-detect returns which is
+# fitted so we pick the matching amixer set + generate the matching
+# /usr/sbin/hotspot_volume.
+AUDIO_CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+if [[ "${AUDIO_CODEC}" == "UNKNOWN" ]]; then
+  say "WARNING: no known audio codec detected — assuming WM8960 for backwards compat"
+  AUDIO_CODEC="WM8960"
+fi
+say "Audio codec: ${AUDIO_CODEC}"
 
-gum style --foreground "#04B575" "Enter AF output volume [50-80] (default 77):"
-AFVOL=$(gum input --value "${OLDAFVOL}")
-if [[ "${AFVOL}" == "" ]]; then
-  AFVOL=65
+# Preserve previous values from whichever control scheme the running
+# hotspot_volume was generated for; falls back across schemes so a
+# codec swap (WM8960 → TLV320) still finds a sensible starting value.
+OLDAFVOL=$(grep -E "sset 'PCM' " /usr/sbin/hotspot_volume 2>/dev/null | head -n1 | grep -oE '[0-9]+%' | head -n1 | tr -d '%')
+if [ -z "$OLDAFVOL" ]; then
+  OLDAFVOL=$(grep Headphone /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
+fi
+OLDRFVOL=$(grep -E "sset 'PGA Level' " /usr/sbin/hotspot_volume 2>/dev/null | head -n1 | grep -oE '[0-9]+%' | head -n1 | tr -d '%')
+if [ -z "$OLDRFVOL" ]; then
+  OLDRFVOL=$(grep Capture /usr/sbin/hotspot_volume 2>/dev/null | awk '{ print $4 }' | tail -n 1 | sed 's/%$//')
+fi
+
+gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
+AFVOL=$(gum input --value "${OLDAFVOL:-77}")
+# Defensive: gum can print an error string to stdout when it can't
+# open a TTY (running headless, in a CI shell, etc.) and that string
+# would otherwise land in the generated /usr/sbin/hotspot_volume as a
+# bogus amixer value. Insist on a bare integer.
+if ! [[ "${AFVOL}" =~ ^[0-9]+$ ]]; then
+  AFVOL=77
 fi
 gum style --foreground 212 "${AFVOL}"
 
-gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 0):"
-RFVOL=$(gum input --value "${OLDRFVOL}")
-if [[ "${RFVOL}" == "" ]]; then
-  RFVOL=19
+# Range hint differs per codec. TLV320's PGA Level is 0-100% (ALSA).
+# WM8960's Capture is 0-100% too but the useful range was narrower.
+if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65):"
+  RFVOL=$(gum input --value "${OLDRFVOL:-65}")
+  RFDEFAULT=65
+else
+  gum style --foreground "#04B575" "Enter RF input volume [17-23] (default 19):"
+  RFVOL=$(gum input --value "${OLDRFVOL:-19}")
+  RFDEFAULT=19
+fi
+if ! [[ "${RFVOL}" =~ ^[0-9]+$ ]]; then
+  RFVOL=${RFDEFAULT}
 fi
 gum style --foreground 212 "${RFVOL}"
 
-  say "Configuring hotspot volume"
-  echo "#!/bin/bash" > /usr/sbin/hotspot_volume
-  echo "" >> /usr/sbin/hotspot_volume
+say "Configuring hotspot volume (${AUDIO_CODEC})"
+echo "#!/bin/bash" > /usr/sbin/hotspot_volume
+echo "" >> /usr/sbin/hotspot_volume
+
+if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
+  cat <<EOF >> /usr/sbin/hotspot_volume
+# TLV320AIC3204 (audiosense-pi overlay) — REV 6+ boards.
+# Board audio path (schematic sheet 2):
+#   codec LOL (pin 22) -> transformer T1 -> sa818 MIC_IN
+#   codec IN1_L (pin 13) <- transformer T2 <- sa818 AF_OUT
+# Left channel only; right side is unused on this board.
+
+# Playback (LOL -> sa818 MIC)
+amixer -c 0 sset 'PCM' ${AFVOL}%             > /dev/null
+amixer -c 0 sset 'LO DAC' on                 > /dev/null
+amixer -c 0 sset 'LO Driver Gain' 0dB        > /dev/null
+amixer -c 0 sset 'LOL Output Mixer L_DAC' on > /dev/null
+
+# Capture (sa818 AF_OUT -> IN1_L -> PGA -> ADC)
+amixer -c 0 sset 'Mic PGA' on                                        > /dev/null
+amixer -c 0 sset 'IN1_L to Left Mixer Positive Resistor' '10 kOhm'   > /dev/null
+amixer -c 0 sset 'ADCFGA Left Mute' off                              > /dev/null
+amixer -c 0 sset 'PGA Level' ${RFVOL}%                               > /dev/null
+amixer -c 0 sset 'ADC Level' 80%                                     > /dev/null
+EOF
+else
   echo "# audio to radio Module" >> /usr/sbin/hotspot_volume
   echo "amixer set 'Headphone' ${AFVOL}%" >> /usr/sbin/hotspot_volume
   echo "# audio from radio Module" >> /usr/sbin/hotspot_volume
   echo "amixer set 'Capture' ${RFVOL}%" >> /usr/sbin/hotspot_volume
   echo "" >> /usr/sbin/hotspot_volume
-  echo "
+  cat <<'EOF' >> /usr/sbin/hotspot_volume
 # Disable ALC en Deemphasis
 amixer cset iface=MIXER,name='DAC Deemphasis Switch' 0
 amixer cset iface=MIXER,name='ALC Function' 0
@@ -51,5 +108,9 @@ amixer cset iface=MIXER,name='ALC Decay' 0
 amixer cset iface=MIXER,name='ALC Hold Time' 0
 amixer cset iface=MIXER,name='ALC Max Gain' 0
 amixer cset iface=MIXER,name='ALC Min Gain' 0
-amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0" >> /usr/sbin/hotspot_volume
- run "/usr/sbin/hotspot_volume > /dev/null 2>&1"
+amixer cset iface=MIXER,name='ADC High Pass Filter Switch' 0
+EOF
+fi
+chmod +x /usr/sbin/hotspot_volume
+
+run "/usr/sbin/hotspot_volume > /dev/null 2>&1"

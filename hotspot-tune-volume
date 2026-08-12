@@ -31,8 +31,12 @@ run() {
 }
 
 say () {
-  say=$1
-  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+  # NOTE: pass the message as a %s argument, NOT interpolated into the
+  # format string. Every other hotspot-* tool inherits the interpolated
+  # pattern, but hotspot-tune-volume prints values with literal `%`
+  # (RX gain 65% → 67%), which printf would otherwise try to interpret
+  # as a format spec — printing `T` as invalid, truncating the line.
+  printf '\x1b[38;5;220m%s\x1b[38;5;255m\n' "$1"
 }
 
 HOTSPOT_SCRIPT=/usr/sbin/hotspot

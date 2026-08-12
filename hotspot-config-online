@@ -825,8 +825,20 @@ EOF
   # in place is enough — svxlink_checkalsa runs it at next boot.
   if aplay -l 2>/dev/null | grep -qE '^card [0-9]'; then
     run "/usr/sbin/hotspot_volume > /dev/null 2>&1"
+
+    # Interactive RX-gain auto-tune. Prompts the operator to key up
+    # and speak; measures the peak; adjusts PGA Level (TLV320) or
+    # Capture (WM8960) so the peak lands near -6 dBFS; persists the
+    # new value into /usr/sbin/hotspot_volume. Skippable — pressing
+    # "Skip" leaves the initial defaults in place. hotspot-tune-volume
+    # stops+starts svxlink itself; the restart below then picks up
+    # the freshly-generated svxlink.conf.
+    if [ -x /usr/sbin/hotspot-tune-volume ]; then
+      /usr/sbin/hotspot-tune-volume || true
+    fi
   else
     say "No sound card active yet — hotspot_volume will apply on next reboot"
+    say "Run 'sudo hotspot-tune-volume' after the reboot to tune RX gain to your HT."
   fi
 
   systemctl restart svxlink
@@ -962,6 +974,10 @@ EOF
   say "Downloading svxlink_checkalsa"
   run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
   run "chmod +x /usr/sbin/svxlink_checkalsa"
+
+  say "Downloading hotspot-tune-volume"
+  run "wget -O /usr/sbin/hotspot-tune-volume https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-tune-volume > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/hotspot-tune-volume"
   say "--> Done"
   say ""
   say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"
@@ -969,6 +985,7 @@ EOF
   say "You here a small two-tone when we are back in listening mode on TG0, when there is traffic on a monitored it will be automaticaly activated !"
   say ""
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
+  say "run [>sudo /usr/sbin/hotspot-tune-volume] to auto-tune RX gain to your HT (key up + speak)"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
   say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups (and the CTCSS mapping on non-PRO chips)"
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"

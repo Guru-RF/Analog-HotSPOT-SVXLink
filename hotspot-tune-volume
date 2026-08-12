@@ -1,0 +1,160 @@
+#!/bin/bash
+#
+# hotspot-tune-volume — interactive RX-gain auto-tune.
+#
+# Prompts the operator to key up their HT and speak normally for a
+# few seconds, measures the incoming peak amplitude via arecord+sox,
+# and adjusts the ALSA capture-side control so the peak lands near
+# -6 dBFS (0.5 on a 0..1 scale, matches AnalogHotspot src/engine.c
+# TUNE_TARGET_PEAK=16000). Same ratio math: new% = cur% × target /
+# measured_peak, clamped [5, 95]. A single pass gets close; running
+# again refines because the %-to-dB curve isn't linear.
+#
+# Codec-aware — TLV320AIC3204 (REV 6+) tunes 'PGA Level', WM8960
+# (older boards) tunes 'Capture'. Detected via hotspot-audio-detect.
+#
+# Also shows the sa818 bandwidth setting parsed from /usr/sbin/hotspot
+# so the operator can match their HT (NFM/narrow vs FM/wide) before
+# keying up — a mismatch there makes the audio sound distorted no
+# matter what the gain is set to.
+#
+# Stops svxlink at start so ALSA capture is free, restarts it before
+# exit. Called from hotspot-config-online right after hotspot_volume
+# has laid down the initial gains, or standalone at any time.
+
+TERM=xterm-256color
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+HOTSPOT_SCRIPT=/usr/sbin/hotspot
+HOTSPOT_VOLUME=/usr/sbin/hotspot_volume
+RECORD_SECONDS=5
+TARGET_PEAK=0.5     # amplitude 0..1 (~ -6 dBFS, matches AnalogHotspot 16000/32767)
+MIN_PEAK=0.015      # ~500/32767 — below this = no real signal, keep gain
+PCT_MIN=5
+PCT_MAX=95
+
+if [ "$EUID" -ne 0 ]; then
+  printf "\x1b[38;5;196mThis script must be run as root (needs to stop/start svxlink). Exiting...\x1b[39m\n"
+  exit 1
+fi
+
+gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B575" \
+  "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Tune Input Volume"
+
+# Which codec, which control?
+CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+case "$CODEC" in
+  TLV320AIC3204) CTL='PGA Level' ;;
+  WM8960|*)      CTL='Capture'   ;;
+esac
+say "Audio codec: ${CODEC} — tuning control '${CTL}'"
+
+# Current gain %
+CUR=$(amixer -c 0 sget "${CTL}" 2>/dev/null | grep -oE '\[[0-9]+%\]' | head -1 | tr -d '[]%')
+if [ -z "$CUR" ]; then
+  say "Could not read current '${CTL}' — is the sound card up? Aborting."
+  exit 1
+fi
+
+# Bandwidth from /usr/sbin/hotspot (--bw 0 = 12.5 kHz narrow, 1 = 25 kHz wide)
+BW=$(grep -oE -- '--bw [01]' "${HOTSPOT_SCRIPT}" 2>/dev/null | head -1 | awk '{print $2}')
+case "$BW" in
+  0) BW_LABEL="NARROW (12.5 kHz)"; HT_HINT="NFM / Narrow / 12.5 kHz" ;;
+  1) BW_LABEL="WIDE (25 kHz)";     HT_HINT="FM / Wide / 25 kHz"      ;;
+  *) BW_LABEL="UNKNOWN";           HT_HINT="check /usr/sbin/hotspot" ;;
+esac
+
+echo
+gum style --foreground 220 --bold "Bandwidth on the hotspot: ${BW_LABEL}"
+say "  ⇒ Set your HT to the SAME bandwidth (${HT_HINT})."
+say "  ⇒ If your HT is on the other setting, audio will sound distorted."
+say ""
+say "Current RX gain: ${CUR}%   Target: peak near -6 dBFS"
+echo
+
+if ! gum confirm "Ready to tune? You'll key up your HT and speak for ${RECORD_SECONDS} seconds." \
+       --affirmative="Tune" --negative="Skip"; then
+  say "Skipped."
+  exit 0
+fi
+
+# Free the sound card for arecord. Idempotent: no-op if svxlink wasn't running.
+say "Stopping svxlink so ALSA capture is free..."
+systemctl stop svxlink 2>/dev/null || true
+sleep 1
+
+gum style --foreground 220 --bold "🎙  KEY UP NOW and speak normally for ${RECORD_SECONDS} seconds..."
+for i in 3 2 1; do
+  printf "  %d..." "$i"
+  sleep 1
+done
+printf "  GO!\n"
+
+# Peak amplitude in 0..1 via sox 'stat'. Raw pipe avoids WAV-header
+# round-trips and keeps the timing tight.
+PEAK=$(arecord -D plughw:0,0 -r 48000 -f S16_LE -c 1 -d ${RECORD_SECONDS} -q -t raw 2>/dev/null \
+       | sox -t raw -e signed -b 16 -c 1 -r 48000 - -n stat 2>&1 \
+       | awk '/Maximum amplitude/ {print $3}')
+
+echo
+
+if [ -z "$PEAK" ]; then
+  say "Could not measure input peak (sox/arecord failed). Restarting svxlink and bailing out."
+  systemctl start svxlink 2>/dev/null || true
+  exit 1
+fi
+
+# dBFS for display: 20 * log10(peak). awk uses natural log so /log(10).
+DBFS=$(awk -v p="${PEAK}" 'BEGIN{ if (p+0<=0) print "-inf"; else printf "%.1f", 20*log(p)/log(10) }')
+say "Measured RX peak: ${PEAK} (${DBFS} dBFS)"
+
+# Below-noise-floor guard: don't touch the gain, tell the operator.
+if awk -v p="${PEAK}" -v m="${MIN_PEAK}" 'BEGIN{exit !(p+0<m+0)}'; then
+  say "  ⇒ Peak too low. Did you key up? RX gain left at ${CUR}%."
+  systemctl start svxlink 2>/dev/null || true
+  exit 0
+fi
+
+# new% = cur% × target ÷ measured, clamped
+NEW=$(awk -v cur="${CUR}" -v peak="${PEAK}" -v target="${TARGET_PEAK}" \
+          -v pmin="${PCT_MIN}" -v pmax="${PCT_MAX}" 'BEGIN{
+  n = int(cur * target / peak + 0.5)
+  if (n < pmin) n = pmin
+  if (n > pmax) n = pmax
+  print n
+}')
+
+if [ "${NEW}" = "${CUR}" ]; then
+  say "  ⇒ Already at optimum for this signal. RX gain unchanged (${CUR}%)."
+else
+  say "  ⇒ Adjusting '${CTL}': ${CUR}% → ${NEW}%"
+  amixer -c 0 sset "${CTL}" "${NEW}%" > /dev/null
+
+  # Persist into /usr/sbin/hotspot_volume so svxlink_checkalsa re-applies
+  # the tuned value on next boot. In-place sed on the codec-appropriate
+  # line; both the TLV320 (sset 'PGA Level' N%) and WM8960 (amixer set
+  # 'Capture' N%) forms are handled.
+  case "$CODEC" in
+    TLV320AIC3204)
+      sed -i -E "s|sset 'PGA Level' [0-9]+%|sset 'PGA Level' ${NEW}%|" "${HOTSPOT_VOLUME}"
+      ;;
+    WM8960|*)
+      sed -i -E "s|amixer set 'Capture' [0-9]+%|amixer set 'Capture' ${NEW}%|" "${HOTSPOT_VOLUME}"
+      ;;
+  esac
+  say "  ⇒ Persisted in ${HOTSPOT_VOLUME}. Re-run this tool to refine."
+fi
+
+echo
+say "Starting svxlink back up..."
+systemctl start svxlink 2>/dev/null || true

@@ -56,7 +56,7 @@ gum style --border normal --margin "1" --padding "1 2" --border-foreground "#04B
   "$(gum style --foreground 3 'RF.')Guru $(gum style --foreground 3 '-') Hotspot Tune Input Volume"
 
 # Which codec, which control?
-CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
 case "$CODEC" in
   TLV320AIC3204) CTL='PGA Level' ;;
   WM8960|*)      CTL='Capture'   ;;

@@ -20,7 +20,7 @@ say () {
 # `Headphone` and `Capture`. hotspot-audio-detect returns which is
 # fitted so we pick the matching amixer set + generate the matching
 # /usr/sbin/hotspot_volume.
-AUDIO_CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+AUDIO_CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
 if [[ "${AUDIO_CODEC}" == "UNKNOWN" ]]; then
   say "WARNING: no known audio codec detected — assuming WM8960 for backwards compat"
   AUDIO_CODEC="WM8960"

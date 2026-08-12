@@ -11,7 +11,7 @@
 # AFVOL = playback level (audio TO the sa818 mic — TX side)
 # RFVOL = capture level (audio FROM the sa818 speaker — RX side)
 
-CODEC=$(hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
 
 # Sensible per-codec defaults if AFVOL/RFVOL weren't passed in. TLV320
 # runs its PGA hot (~31 dB per 65%) so it wants a low RX gain (20)

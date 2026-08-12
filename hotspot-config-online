@@ -68,6 +68,24 @@ else
   rm -f /tmp/hotspot-audio-detect.new
 fi
 
+# hotspot-tune-volume is refreshed at the TOP of the script (with the
+# other early refreshes) rather than in the trailing auto-update block,
+# because we CALL it later in the commit-changes branch — a first-time
+# upgrade from a pre-tune-volume install would otherwise silently
+# skip the tune (invocation guard [ -x ... ] returns false, then the
+# download fires afterwards, then the run ends). Staged install so a
+# half-finished wget can't leave a zero-byte executable that would
+# silently no-op on every subsequent boot.
+say "Refreshing hotspot-tune-volume from upstream"
+if wget -q -O /tmp/hotspot-tune-volume.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-tune-volume 2>/dev/null \
+   && [ -s /tmp/hotspot-tune-volume.new ]; then
+  install -m 755 /tmp/hotspot-tune-volume.new /usr/sbin/hotspot-tune-volume
+  rm -f /tmp/hotspot-tune-volume.new
+else
+  say "Could not refresh hotspot-tune-volume (offline?), using installed copy"
+  rm -f /tmp/hotspot-tune-volume.new
+fi
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next
@@ -975,9 +993,10 @@ EOF
   run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
   run "chmod +x /usr/sbin/svxlink_checkalsa"
 
-  say "Downloading hotspot-tune-volume"
-  run "wget -O /usr/sbin/hotspot-tune-volume https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-tune-volume > /dev/null 2>&1"
-  run "chmod +x /usr/sbin/hotspot-tune-volume"
+  # hotspot-tune-volume itself is refreshed at the TOP of this script
+  # (staged download) — that's early enough for the invocation earlier
+  # in the commit block to see the fresh copy on the very first
+  # upgrade run.
   say "--> Done"
   say ""
   say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"

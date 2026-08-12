@@ -42,7 +42,16 @@ say () {
 HOTSPOT_SCRIPT=/usr/sbin/hotspot
 HOTSPOT_VOLUME=/usr/sbin/hotspot_volume
 RECORD_SECONDS=5
-TARGET_PEAK=0.5     # amplitude 0..1 (~ -6 dBFS, matches AnalogHotspot 16000/32767)
+# TARGET_PEAK — peak amplitude we aim the capture stream at (0..1).
+# 0.15 ≈ -16 dBFS. AnalogHotspot's #09# tune uses 0.5 (~-6 dBFS) because
+# its pipeline ends in a directly-driven RF chip and can eat the loud
+# signal. Ours ends in svxlink → opus → the reflector, which distorts
+# audibly (users report "oversteered") long before the ALSA capture is
+# nominally clipping. -16 dBFS matches what the TLV320AIC3204 users
+# converged on by hand (20% PGA at a ~0.48 measured peak) and gives
+# opus enough headroom for peaks. Overridable per-invocation with the
+# TUNE_TARGET_PEAK env var if a specific chain needs more or less.
+TARGET_PEAK=${TUNE_TARGET_PEAK:-0.15}
 MIN_PEAK=0.015      # ~500/32767 — below this = no real signal, keep gain
 PCT_MIN=5
 PCT_MAX=95
@@ -83,7 +92,9 @@ gum style --foreground 220 --bold "Bandwidth on the hotspot: ${BW_LABEL}"
 say "  ⇒ Set your HT to the SAME bandwidth (${HT_HINT})."
 say "  ⇒ If your HT is on the other setting, audio will sound distorted."
 say ""
-say "Current RX gain: ${CUR}%   Target: peak near -6 dBFS"
+# Show the target as dBFS for the operator — 20*log10(TARGET_PEAK)
+TGT_DBFS=$(awk -v t="${TARGET_PEAK}" 'BEGIN{ if (t+0<=0) print "-inf"; else printf "%.0f", 20*log(t)/log(10) }')
+say "Current RX gain: ${CUR}%   Target: peak near ${TGT_DBFS} dBFS"
 echo
 
 if ! gum confirm "Ready to tune? You'll key up your HT and speak for ${RECORD_SECONDS} seconds." \

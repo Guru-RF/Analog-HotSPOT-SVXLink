@@ -319,26 +319,47 @@ if [ -f "$CONFIG_TXT" ]; then
 fi
 
 # --- WM8960 driver health check ---------------------------------------
-# The Waveshare WM8960-Audio-HAT driver is out-of-tree with NO DKMS
-# auto-rebuild. Any kernel upgrade (apt full-upgrade) or SD-card move
-# between Pi models with different kernel lines (Pi 4/Zero 2W → Pi 5)
-# leaves the compiled .ko mismatched. Symptoms:
-#   - /proc/asound/cards has no wm8960 line (driver refused to load), OR
-#   - card is listed but standard mixer controls ('Headphone', 'Capture')
-#     are missing (module loaded but codec-probe failed silently).
-# Offer to auto-rebuild via update-wm8960. WM8960_BROKEN persists to
-# the end-of-run instructions block so a decline still gets a
-# terminal reminder to run it later.
+# The Waveshare WM8960-Audio-HAT driver is out-of-tree; even with DKMS
+# it can fall out of sync when the kernel is bumped (apt full-upgrade)
+# or when the SD card is moved between Pi models on different kernel
+# lines (Pi 4/Zero 2W → Pi 5). Offer to auto-rebuild via update-wm8960.
+#
+# Health check is a FUNCTIONAL test — try to actually open the WM8960
+# capture stream (same trick hotspot-tune-volume uses). Earlier
+# versions of this check compared mixer control names, which broke
+# in two ways:
+#   - The card isn't always card 0 (Pi 5 with HDMI audio active
+#     pushes the WM8960 to card 1+).
+#   - Waveshare's driver exposes 'Headphone Playback Volume' etc.;
+#     matching the literal simple-control name 'Headphone' missed
+#     the actual full control names on working boxes, so healthy
+#     WM8960 installs were tagged broken and users got nagged to
+#     rebuild for no reason.
+#
+# "Device busy" from arecord = svxlink already opened the stream =
+# proof the driver works. Any other arecord failure = driver stale
+# or the codec isn't responding.
+_wm8960_healthy() {
+  local card out rc
+  card=$(aplay -l 2>/dev/null | awk '/wm8960/ {gsub(":","",$2); print $2; exit}')
+  [ -z "${card}" ] && return 1
+  out=$(timeout 5 arecord -D "plughw:${card},0" -f S16_LE -c 1 -r 48000 -d 1 /dev/null 2>&1)
+  rc=$?
+  [ "${rc}" -eq 0 ] && return 0
+  # svxlink has the device — that IS the healthy state.
+  echo "${out}" | grep -qiE 'busy|resource' && return 0
+  return 1
+}
+
 WM8960_BROKEN=0
 if [[ "${AUDIO_CODEC}" == "WM8960" ]]; then
-  if ! grep -q 'wm8960' /proc/asound/cards 2>/dev/null; then
+  say "Verifying WM8960 capture path..."
+  if _wm8960_healthy; then
+    say "  ✓ WM8960 driver working — no rebuild needed."
+  else
     WM8960_BROKEN=1
-    say "WARNING: WM8960 codec detected on I²C but NO wm8960 audio card is loaded."
+    say "WARNING: WM8960 capture stream failed to open — driver appears stale/broken."
     say "  Most common cause: kernel module built for a different kernel."
-  elif ! amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
-    WM8960_BROKEN=1
-    say "WARNING: WM8960 audio card present but standard 'Headphone' control missing."
-    say "  Codec driver probe likely failed — kernel module may be stale."
   fi
   if [ "${WM8960_BROKEN}" -eq 1 ]; then
     say "  ⇒ update-wm8960 rebuilds the Waveshare driver against the current kernel."
@@ -353,8 +374,7 @@ if [[ "${AUDIO_CODEC}" == "WM8960" ]]; then
         # and every downstream amixer call would fail. Better to
         # tell the user to reboot + rerun so the next pass finds the
         # driver healthy.
-        if grep -q 'wm8960' /proc/asound/cards 2>/dev/null \
-           && amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
+        if _wm8960_healthy; then
           WM8960_BROKEN=0
           say "  ✓ WM8960 driver now healthy — continuing config."
         else

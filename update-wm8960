@@ -95,10 +95,26 @@ else
   REBOOT_NEEDED=1
 fi
 
-if amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
-  say "  ✓ WM8960 mixer controls present (Headphone)"
+# Functional test: can we actually open the capture stream? Direct
+# signal — bypasses the card-number / mixer-control-name fragility
+# that the earlier `amixer … | grep "'Headphone'"` check suffered
+# from (Waveshare's driver exposes 'Headphone Playback Volume'
+# etc., so the literal 'Headphone' match failed on healthy boxes
+# and everyone got a false-positive "reboot needed"). If svxlink
+# has the device, arecord returns "busy" — that IS the healthy
+# state (svxlink opened the stream).
+WM8960_CARD=$(aplay -l 2>/dev/null | awk '/wm8960/ {gsub(":","",$2); print $2; exit}')
+if [ -n "${WM8960_CARD}" ]; then
+  ARECORD_OUT=$(timeout 5 arecord -D "plughw:${WM8960_CARD},0" -f S16_LE -c 1 -r 48000 -d 1 /dev/null 2>&1)
+  ARECORD_RC=$?
+  if [ ${ARECORD_RC} -eq 0 ] || echo "${ARECORD_OUT}" | grep -qiE 'busy|resource'; then
+    say "  ✓ WM8960 capture stream opens — driver is live"
+  else
+    say "  ⚠ WM8960 capture stream doesn't open — reboot needed"
+    REBOOT_NEEDED=1
+  fi
 else
-  say "  ⚠ WM8960 mixer controls not yet present — reboot needed"
+  say "  ⚠ No wm8960 card in aplay -l yet — reboot needed"
   REBOOT_NEEDED=1
 fi
 

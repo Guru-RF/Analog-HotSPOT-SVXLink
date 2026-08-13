@@ -347,13 +347,26 @@ if [[ "${AUDIO_CODEC}" == "WM8960" ]]; then
       if [ -x /usr/sbin/update-wm8960 ]; then
         /usr/sbin/update-wm8960 || true
         # Re-check: rebuild may have fixed things without a reboot;
-        # if it did, drop the end-of-run warning.
+        # if it did, drop the end-of-run warning and continue the
+        # config normally. Otherwise EXIT cleanly here — continuing
+        # would generate hotspot_volume against a half-loaded driver
+        # and every downstream amixer call would fail. Better to
+        # tell the user to reboot + rerun so the next pass finds the
+        # driver healthy.
         if grep -q 'wm8960' /proc/asound/cards 2>/dev/null \
            && amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
           WM8960_BROKEN=0
-          say "  ✓ WM8960 driver now healthy."
+          say "  ✓ WM8960 driver now healthy — continuing config."
         else
-          say "  ⚠ Driver still not fully live — a reboot will be needed. Continuing config."
+          say ""
+          gum style --foreground 220 --bold "REBOOT NEEDED to activate the new WM8960 driver."
+          say ""
+          say "  Please run:"
+          say "    1. sudo reboot"
+          say "    2. sudo hotspot-config   (re-run — the driver will be healthy this time)"
+          say ""
+          say "Exiting hotspot-config now."
+          exit 0
         fi
       else
         say "  update-wm8960 not installed on this box — please run manually after: sudo update-wm8960"

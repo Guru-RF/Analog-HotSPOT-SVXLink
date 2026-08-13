@@ -1,0 +1,112 @@
+#!/bin/bash
+#
+# update-wm8960 — rebuild + reinstall the WM8960 out-of-tree kernel
+# module against the currently-running kernel.
+#
+# WHY: Waveshare's WM8960-Audio-HAT ships as an out-of-tree kernel
+# module (snd_soc_wm8960) with no DKMS auto-rebuild. install-
+# radiomodule.sh runs their ./install.sh once at initial setup, which
+# compiles the module against THAT kernel's headers. When apt-upgrade
+# bumps the kernel, or when the SD card is moved from a Pi 4 / Pi
+# Zero 2W to a Pi 5 (different kernel line entirely), the compiled
+# .ko no longer matches — the driver either fails to load, or on
+# some kernels the module loads but the codec probe fails silently
+# and /proc/asound/cards shows a card without working mixer controls.
+#
+# This script uses the SAME flow install-radiomodule.sh does on a
+# fresh Pi Zero 2W: fresh git clone, run Waveshare's install.sh,
+# reboot. What we add on top is a post-install verification step so
+# users get a clear "success / needs reboot / still broken" signal
+# instead of just a silent no-op.
+
+if [ "$EUID" -ne 0 ]; then
+  printf "\x1b[38;5;196mThis script must be run as root. Exiting...\x1b[39m\n"
+  exit 1
+fi
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+# NB: %s format so any '%' in the message stays literal (unlike the
+# copy-paste `say` in the other hotspot-* tools; see the fix in
+# hotspot-tune-volume commit cd0b4d0).
+say () {
+  printf '\x1b[38;5;220m%s\x1b[38;5;255m\n' "$1"
+}
+
+KVER=$(uname -r)
+PI_MODEL=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo unknown)
+say "Rebuilding WM8960 audio driver"
+say "  Running kernel : ${KVER}"
+say "  Pi board       : ${PI_MODEL}"
+
+# Same steps install-radiomodule.sh takes on a fresh box. Clone into
+# /tmp (Waveshare's install.sh doesn't care about the checkout path),
+# nuke any half-finished previous clone.
+BUILDDIR=/tmp/WM8960-Audio-HAT
+say "Cloning fresh WM8960 driver into ${BUILDDIR}"
+run "rm -rf ${BUILDDIR}"
+run "git clone https://github.com/waveshare/WM8960-Audio-HAT ${BUILDDIR}"
+
+say "Running Waveshare install.sh (compiles + installs against kernel ${KVER})"
+(
+  cd "${BUILDDIR}" && ./install.sh
+)
+INSTALL_RC=$?
+if [ ${INSTALL_RC} -ne 0 ]; then
+  say ""
+  printf '\x1b[38;5;196mWaveshare install.sh exited %d — build likely failed. Check the output above.\x1b[39m\n' "${INSTALL_RC}"
+  say "Common causes:"
+  say "  - missing kernel headers (sudo apt install raspberrypi-kernel-headers)"
+  say "  - Waveshare fork not yet updated for a very new kernel"
+  exit ${INSTALL_RC}
+fi
+
+# Post-install verification — Waveshare's install.sh sometimes returns
+# 0 even on partial failures, so cross-check what actually landed:
+#   1) module file exists for the running kernel
+#   2) kernel actually loaded the module (or will after modprobe)
+#   3) /proc/asound/cards contains a wm8960 line
+#   4) standard WM8960 mixer controls are exposed
+# 3+4 only succeed AFTER the dtoverlay has bound the codec, which
+# typically requires a reboot. Report accordingly.
+say ""
+say "Verifying install"
+MODFILE=$(find /lib/modules/${KVER} -name 'snd-soc-wm8960*.ko*' 2>/dev/null | head -n1)
+if [ -n "${MODFILE}" ]; then
+  say "  ✓ Kernel module present : ${MODFILE}"
+else
+  say "  ✗ Kernel module MISSING under /lib/modules/${KVER} — build didn't install"
+  exit 1
+fi
+
+# Try to load in case the driver wasn't already resident (fresh
+# install on a running system).
+modprobe snd_soc_wm8960 2>/dev/null || true
+
+REBOOT_NEEDED=0
+if grep -q 'wm8960' /proc/asound/cards 2>/dev/null; then
+  say "  ✓ wm8960 audio card present in /proc/asound/cards"
+else
+  say "  ⚠ wm8960 card not yet in /proc/asound/cards — reboot needed"
+  REBOOT_NEEDED=1
+fi
+
+if amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
+  say "  ✓ WM8960 mixer controls present (Headphone)"
+else
+  say "  ⚠ WM8960 mixer controls not yet present — reboot needed"
+  REBOOT_NEEDED=1
+fi
+
+say ""
+if [ ${REBOOT_NEEDED} -eq 1 ]; then
+  gum style --foreground 220 --bold "REBOOT REQUIRED to activate the new WM8960 driver."
+  say "  sudo reboot"
+  exit 0
+fi
+
+gum style --foreground 46 --bold "WM8960 driver rebuild complete. Audio should work now."

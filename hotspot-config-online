@@ -86,6 +86,21 @@ else
   rm -f /tmp/hotspot-tune-volume.new
 fi
 
+# update-wm8960 refreshed here too so the WM8960 health check below
+# can call it, and so kernel-upgrade / SD-card-migration recovery
+# ("no wm8960 card after apt full-upgrade") stops requiring a manual
+# git clone. Staged install for the usual reason (a half-finished
+# wget must not overwrite a working copy).
+say "Refreshing update-wm8960 from upstream"
+if wget -q -O /tmp/update-wm8960.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/update-wm8960 2>/dev/null \
+   && [ -s /tmp/update-wm8960.new ]; then
+  install -m 755 /tmp/update-wm8960.new /usr/sbin/update-wm8960
+  rm -f /tmp/update-wm8960.new
+else
+  say "Could not refresh update-wm8960 (offline?), using installed copy"
+  rm -f /tmp/update-wm8960.new
+fi
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next
@@ -276,6 +291,50 @@ if [ -f "$CONFIG_TXT" ]; then
       fi
       ;;
   esac
+fi
+
+# --- WM8960 driver health check ---------------------------------------
+# The Waveshare WM8960-Audio-HAT driver is out-of-tree with NO DKMS
+# auto-rebuild. Any kernel upgrade (apt full-upgrade) or SD-card move
+# between Pi models with different kernel lines (Pi 4/Zero 2W → Pi 5)
+# leaves the compiled .ko mismatched. Symptoms:
+#   - /proc/asound/cards has no wm8960 line (driver refused to load), OR
+#   - card is listed but standard mixer controls ('Headphone', 'Capture')
+#     are missing (module loaded but codec-probe failed silently).
+# Offer to auto-rebuild via update-wm8960. WM8960_BROKEN persists to
+# the end-of-run instructions block so a decline still gets a
+# terminal reminder to run it later.
+WM8960_BROKEN=0
+if [[ "${AUDIO_CODEC}" == "WM8960" ]]; then
+  if ! grep -q 'wm8960' /proc/asound/cards 2>/dev/null; then
+    WM8960_BROKEN=1
+    say "WARNING: WM8960 codec detected on I²C but NO wm8960 audio card is loaded."
+    say "  Most common cause: kernel module built for a different kernel."
+  elif ! amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
+    WM8960_BROKEN=1
+    say "WARNING: WM8960 audio card present but standard 'Headphone' control missing."
+    say "  Codec driver probe likely failed — kernel module may be stale."
+  fi
+  if [ "${WM8960_BROKEN}" -eq 1 ]; then
+    say "  ⇒ update-wm8960 rebuilds the Waveshare driver against the current kernel."
+    if gum confirm "Run update-wm8960 now? (takes a few minutes; reboot may be needed after)" \
+         --affirmative="Rebuild" --negative="Skip"; then
+      if [ -x /usr/sbin/update-wm8960 ]; then
+        /usr/sbin/update-wm8960 || true
+        # Re-check: rebuild may have fixed things without a reboot;
+        # if it did, drop the end-of-run warning.
+        if grep -q 'wm8960' /proc/asound/cards 2>/dev/null \
+           && amixer -c 0 controls 2>/dev/null | grep -q "'Headphone'"; then
+          WM8960_BROKEN=0
+          say "  ✓ WM8960 driver now healthy."
+        else
+          say "  ⚠ Driver still not fully live — a reboot will be needed. Continuing config."
+        fi
+      else
+        say "  update-wm8960 not installed on this box — please run manually after: sudo update-wm8960"
+      fi
+    fi
+  fi
 fi
 
 OLDCPVOL=$(grep volume /usr/sbin/hotspot 2>/dev/null | awk '{ print $6 }' | tail -n 1)
@@ -1051,6 +1110,23 @@ EOF
   fi
   say "please reboot your system with:"
   say "run [>sudo reboot]"
+
+  # WM8960 kernel-module rebuild reminder — set earlier if the health
+  # check found the driver in a broken state and either the user
+  # declined the rebuild or the rebuild couldn't fully activate the
+  # driver without a reboot. Printed LAST so it's on-screen at the
+  # prompt when the user comes back to run the reboot.
+  if [[ "${WM8960_BROKEN}" == "1" ]]; then
+    say ""
+    gum style --foreground 196 --bold "⚠  WM8960 audio driver is not fully working on this box."
+    say "  The Waveshare kernel module needs rebuilding against the current kernel"
+    say "  (common on Pi 5 and after any 'apt full-upgrade' that bumps the kernel)."
+    say ""
+    say "  After the reboot above, run:"
+    say "  run [>sudo update-wm8960]"
+    say "  then reboot once more:"
+    say "  run [>sudo reboot]"
+  fi
 
   rm -f /needsconfig
 else

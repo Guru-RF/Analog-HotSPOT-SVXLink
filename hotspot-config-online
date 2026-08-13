@@ -193,16 +193,31 @@ fi
 #                             stays in pass-through (--ctcss TX,0).
 #                             svxlink/LADSPA do the audio shaping.
 #
-#   IS_NEW_BOARD  ← board-generation check. Drives the RF-audio ALSA
-#                   levels: 4th-gen board wants RFVOL=65 (alsa %) vs
-#                   older-board RFVOL=0 (SA818 0–23 scale). Chip-side
-#                   filter enable ALSO fires on this flag OR on
-#                   SWITCH_MODE=DTMF — the DTMF path needs chip filters
-#                   on so emphasis is applied somewhere.
+#   IS_NEW_BOARD  ← board-generation check. Only drives the RF-audio
+#                   ALSA levels: 4th-gen board wants RFVOL=65 (alsa %)
+#                   vs older-board RFVOL=0 (SA818 0-23 scale). Does
+#                   NOT gate chip filters any more — those are purely
+#                   chip+mode driven now.
 #
-# All three can be set independently — e.g. a non-PRO chip on an
-# older board with SWITCH_MODE=DTMF still gets chip filters + GPIO12
-# squelch (chip is doing everything) but the older-board ALSA levels.
+# Chip-filter emission (sa818 filters --emphasis/--highpass/--lowpass)
+# in the generated /usr/sbin/hotspot follows THREE cases:
+#
+#   PRO chip                — skip the filters line entirely. SA818PRO
+#                             does emphasis internally and does not
+#                             accept the AT+SETFILTER command.
+#   SA818/SA868 in DTMF     — enable all three. Chip is already doing
+#                             CTCSS decode + squelch (GPIO12), so it
+#                             also does emphasis + band-limiting; the
+#                             DTMF apply block sets svxlink emphasis
+#                             to 0 so we don't shape twice.
+#   SA818/SA868 in CTCSS    — disable all three. svxlink does software
+#                             CTCSS decode + emphasis (template
+#                             defaults DEEMPHASIS=1 / PREEMPHASIS=1
+#                             stay in place — no override).
+#
+# All three flags can be set independently — e.g. a non-PRO chip on
+# a 4th-gen board with SWITCH_MODE=DTMF gets chip filters + GPIO12
+# squelch and the 4th-gen ALSA levels.
 IS_PRO_CHIP=0
 if [[ "${CHIPNAME}" == *PRO* ]]; then
   IS_PRO_CHIP=1
@@ -767,20 +782,37 @@ if [ $RESULT -eq 0 ]; then
   echo "#!/bin/bash" > /usr/sbin/hotspot
   echo "" >> /usr/sbin/hotspot
   echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} --ctcss ${CTCSSTX},${CTCSSRX} --squelch 8" >> /usr/sbin/hotspot
-  # Chip-side filter enable fires on either signal:
-  #   IS_NEW_BOARD=1  — 4th-gen audio path wants chip-side filters on
-  #                     regardless of switching mode; older boards
-  #                     otherwise let svxlink/LADSPA do the shaping.
-  #   SWITCH_MODE=DTMF — in DTMF mode the chip already handles CTCSS
-  #                     decode + drives GPIO12 for squelch, so let it
-  #                     do emphasis + band-limiting too. svxlink stays
-  #                     out of the audio path (DEEMPHASIS=0/PREEMPHASIS=0
-  #                     in the DTMF apply block above), so we MUST turn
-  #                     the chip filters on or emphasis is missing
-  #                     everywhere. This is the same shape PRO chips
-  #                     already had; the change extends it to non-PRO
-  #                     DTMF on older boards too.
-  if [[ "${IS_NEW_BOARD}" == "1" || "${SWITCH_MODE}" == "DTMF" ]]; then
+  # Chip-side filter emit rules — three cases, in order:
+  #
+  #   IS_PRO_CHIP=1     — SA818PRO handles emphasis + band-limiting
+  #                       internally as a fixed feature and does NOT
+  #                       accept the AT+SETFILTER command. Skip the
+  #                       filter line entirely. hotspot-frequency also
+  #                       preserves the "no filter line" state so
+  #                       later frequency changes don't inject one.
+  #                       svxlink emphasis stays at 0 (PRO does it in
+  #                       hardware) — set by the DTMF apply block.
+  #
+  #   SWITCH_MODE=DTMF  — SA818/SA868 in DTMF mode. Chip is already
+  #                       doing the CTCSS decode + driving GPIO12 for
+  #                       squelch, so let it also handle emphasis +
+  #                       band-limiting. svxlink stays out of the
+  #                       audio path (DEEMPHASIS=0/PREEMPHASIS=0 in
+  #                       the DTMF apply block above).
+  #
+  #   Otherwise          — SA818/SA868 in CTCSS switching mode. svxlink
+  #                       does software CTCSS decode AND emphasis
+  #                       (template defaults DEEMPHASIS=1 / PREEMPHASIS=1
+  #                       stay in place — no override). Chip filters
+  #                       off so audio isn't shaped twice. This is
+  #                       the case regardless of board generation:
+  #                       the previous IS_NEW_BOARD=1 -> enable-anyway
+  #                       rule doubled the emphasis on 4th-gen +
+  #                       CTCSS-mode boxes and made RX sound
+  #                       over-driven ("oversteered") to users.
+  if [[ "${IS_PRO_CHIP}" == "1" ]]; then
+    say "SA818PRO detected — no chip filters line (chip handles filtering internally)"
+  elif [[ "${SWITCH_MODE}" == "DTMF" ]]; then
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis enable --highpass enable --lowpass enable" >> /usr/sbin/hotspot
   else
     echo "sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable" >> /usr/sbin/hotspot

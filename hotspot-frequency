@@ -30,10 +30,16 @@ if [[ -z "${SERIAL_PORT}" ]]; then
   else SERIAL_PORT="/dev/ttyS0"
   fi
 fi
+# Preserve whatever filter state hotspot-config-online chose. Three
+# possibilities:
+#   1. --emphasis enable --highpass enable --lowpass enable    (DTMF mode)
+#   2. --emphasis disable --highpass disable --lowpass disable (CTCSS mode)
+#   3. no filter line at all                                    (SA818PRO)
+# For case 3 we MUST NOT inject a default here — SA818PRO does not
+# accept the AT+SETFILTER command and calling `sa818 filters …` on
+# it will silently fail (or, on some firmwares, return an error).
+# Empty FILTER_LINE => the generator below just omits the line.
 FILTER_LINE=$(grep -m1 'sa818 .* filters' /usr/sbin/hotspot)
-if [[ -z "${FILTER_LINE}" ]]; then
-  FILTER_LINE="sa818 --port ${SERIAL_PORT} filters --emphasis disable --highpass disable --lowpass disable"
-fi
 
 gum style --border normal --margin "1" --padding "1 2" \
   --border-foreground "#04B575" \
@@ -51,7 +57,11 @@ say "Configuring hotspot"
   echo "#!/bin/bash"
   echo ""
   echo "sa818 --port ${SERIAL_PORT} radio --bw 0 --frequency ${FREQ} ${CTCSS} --squelch 8"
-  echo "${FILTER_LINE}"
+  # Only emit a filter line when one was already in place — PRO chips
+  # get no line at all (see comment on FILTER_LINE above).
+  if [[ -n "${FILTER_LINE}" ]]; then
+    echo "${FILTER_LINE}"
+  fi
   echo "sa818 --port ${SERIAL_PORT} volume --level ${CPVOL}"
 } > /usr/sbin/hotspot
 

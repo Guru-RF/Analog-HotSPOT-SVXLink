@@ -87,6 +87,19 @@ say "Downloading latest config template"
 run "wget -O /tmp/svxlink.conf https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.conf > /dev/null 2>&1"
 say "Applying configuration"
 cp /tmp/svxlink.conf /etc/svxlink/svxlink.conf
+
+# Rewrite hardcoded gpiochip0 in the template to whatever the
+# hotspot-gpiochip helper says owns the 40-pin header on this Pi
+# (Pi 5's RP1 lives on gpiochip4-ish, not gpiochip0). Same substitution
+# hotspot-config-online applies. Falls back to gpiochip0 if the
+# helper isn't installed yet — matches historical behaviour.
+if command -v /usr/local/bin/hotspot-gpiochip >/dev/null 2>&1; then
+  GPIOCHIP=$(/usr/local/bin/hotspot-gpiochip)
+else
+  GPIOCHIP=gpiochip0
+fi
+perl -i -pe "s/^(\\w+_GPIOD_CHIP=)gpiochip[0-9]+/\${1}${GPIOCHIP}/" /etc/svxlink/svxlink.conf
+
 perl -i -pe "s/--HOST--/${OLDSVXREFL}/g" /etc/svxlink/svxlink.conf
 perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/svxlink.conf
 perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
@@ -112,7 +125,7 @@ perl -i -pe "s/--SVXEMAIL--/$(printf '%s' "$OLDSVXEMAIL" | sed 's/@/\\@/g')/g" /
 # and double the emphasis. Same substitutions as hotspot-config-online's
 # DTMF-mode branch, kept in sync.
 if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
-  perl -i -pe 's/^(SQL_DET=CTCSS)$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
+  perl -i -pe "s/^(SQL_DET=CTCSS)\$/#\$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=${GPIOCHIP}\nSQL_GPIOD_LINE=!12/" /etc/svxlink/svxlink.conf
   perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
   perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
   perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf

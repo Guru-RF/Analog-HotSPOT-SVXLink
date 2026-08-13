@@ -101,6 +101,31 @@ else
   rm -f /tmp/update-wm8960.new
 fi
 
+# hotspot-gpiochip refreshed here too — needed by hotspot-audio-detect,
+# hotspot-detect and the svxlink.conf GPIOD substitutions further
+# down. On Pi 5 the user 40-pin header lives on the RP1 southbridge
+# (gpiochip4) not on the SoC's gpiochip0; hardcoding gpiochip0
+# throws FileNotFoundError there.
+say "Refreshing hotspot-gpiochip from upstream"
+if wget -q -O /tmp/hotspot-gpiochip.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-gpiochip 2>/dev/null \
+   && [ -s /tmp/hotspot-gpiochip.new ]; then
+  install -m 755 /tmp/hotspot-gpiochip.new /usr/local/bin/hotspot-gpiochip
+  rm -f /tmp/hotspot-gpiochip.new
+else
+  say "Could not refresh hotspot-gpiochip (offline?), using installed copy"
+  rm -f /tmp/hotspot-gpiochip.new
+fi
+
+# Resolve the pinctrl chip name once so the rest of the script can
+# splice it into svxlink.conf (PTT_GPIOD_CHIP, SQL_GPIOD_CHIP) and
+# into the sa818 chip-side helpers.
+if command -v /usr/local/bin/hotspot-gpiochip >/dev/null 2>&1; then
+  GPIOCHIP=$(/usr/local/bin/hotspot-gpiochip)
+else
+  GPIOCHIP=gpiochip0
+fi
+say "GPIO chip for user header: ${GPIOCHIP}"
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next
@@ -763,6 +788,15 @@ if [ $RESULT -eq 0 ]; then
   cp /tmp/svxlink.conf /etc/svxlink/svxlink.conf
   cp /tmp/node_info.json /etc/svxlink/node_info.json
 
+  # svxlink.conf template ships hardcoded PTT_GPIOD_CHIP=gpiochip0 (and
+  # the DTMF apply block below writes SQL_GPIOD_CHIP=${GPIOCHIP}). On
+  # Pi 5 the 40-pin header's GPIO lives on the RP1 (gpiochip4-ish),
+  # not on the SoC's gpiochip0, so any hardcoded gpiochip0 in the
+  # template needs rewriting to the actual pinctrl chip we resolved
+  # via hotspot-gpiochip. Rewrites every ^*_GPIOD_CHIP=gpiochip<N>
+  # line — safe on Pi 4/Zero 2W too (resolves back to gpiochip0).
+  perl -i -pe "s/^(\\w+_GPIOD_CHIP=)gpiochip[0-9]+/\${1}${GPIOCHIP}/" /etc/svxlink/svxlink.conf
+
   perl -i -pe "s/--HOST--/${REFLECTOR}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CALL--/${CALL}/g" /etc/svxlink/svxlink.conf
   perl -i -pe "s/--CTCSSMAPPING--/${CTCSSMAPPING}/g" /etc/svxlink/svxlink.conf
@@ -821,7 +855,7 @@ if [ $RESULT -eq 0 ]; then
   # and collapses everything into one giant fake TG number.
   if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
     say "Applying DTMF-mode overrides to svxlink.conf (chip-driven squelch + emphasis)"
-    perl -i -pe 's/^(SQL_DET=CTCSS)$/#$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=gpiochip0\nSQL_GPIOD_LINE=!12/' /etc/svxlink/svxlink.conf
+    perl -i -pe "s/^(SQL_DET=CTCSS)\$/#\$1\nSQL_DET=GPIOD\nSQL_GPIOD_CHIP=${GPIOCHIP}\nSQL_GPIOD_LINE=!12/" /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_MODE=.*)$/#$1/'        /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_FQ=.*)$/#$1/'          /etc/svxlink/svxlink.conf
     perl -i -pe 's/^(CTCSS_TO_TG_DELAY=.*)$/#$1/' /etc/svxlink/svxlink.conf

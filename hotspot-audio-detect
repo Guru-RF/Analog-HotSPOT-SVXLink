@@ -47,8 +47,17 @@ fi
 
 # 2. Fallback: I²C probe. Release GPIO26 (TLV320 RST#) briefly.
 # Harmless on old boards — GPIO26 isn't used by the WM8960 chain.
+# The gpiochip name is Pi-model-dependent (gpiochip0 on Pi 4/Zero 2W,
+# gpiochip4 on Pi 5 where the RP1 owns the user header), so ask the
+# hotspot-gpiochip helper — falls back to gpiochip0 if the helper
+# isn't installed yet.
 if command -v gpioset >/dev/null 2>&1; then
-  gpioset --mode=exit -B pull-up gpiochip0 26=1 >/dev/null 2>&1 || true
+  if command -v /usr/local/bin/hotspot-gpiochip >/dev/null 2>&1; then
+    _CHIP=$(/usr/local/bin/hotspot-gpiochip)
+  else
+    _CHIP=gpiochip0
+  fi
+  gpioset --mode=exit -B pull-up "${_CHIP}" 26=1 >/dev/null 2>&1 || true
   sleep 0.2
 fi
 

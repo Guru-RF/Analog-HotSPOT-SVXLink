@@ -11,11 +11,15 @@ sa818 --port /dev/serial0 volume --level 1
 # via hotspot-audio-detect — same defaults hotspot-config lays down.
 /usr/sbin/hotspot_volume
 
-gpioset gpiochip0 16=1
+# Pi 5's user 40-pin header lives on the RP1 (typically gpiochip4);
+# Pi 4 / Zero 2W keep it on the SoC's gpiochip0. Ask the helper.
+GPIOCHIP=$(hotspot-gpiochip 2>/dev/null || echo gpiochip0)
+
+gpioset "${GPIOCHIP}" 16=1
 cd /tmp
 rm -f ImperialMarch60.wav
 wget https://github.com/Guru-RF/Analog-HotSPOT-SVXLink/raw/refs/heads/main/ImperialMarch60.wav
-gpioset gpiochip0 16=0
+gpioset "${GPIOCHIP}" 16=0
 sleep 10
 aplay ImperialMarch60.wav
-gpioset gpiochip0 16=1
+gpioset "${GPIOCHIP}" 16=1

@@ -19,6 +19,8 @@ Strap map (BCM GPIO numbering, "grounded" = pulled LOW):
     GPIO 27 ground               -> 2W power module (else 0.5W)
 """
 
+import glob
+
 import gpiod
 
 GPIO_TRX     = 6    # both gens — Transceiver HAT strap
@@ -28,7 +30,60 @@ GPIO_VHF_OLD = 7    # 1st–3rd gen — VHF strap
 GPIO_VHF_NEW = 22   # 4th gen     — VHF strap
 GPIO_2W      = 27   # 4th gen     — 2W power module marker
 
-chip = gpiod.Chip("gpiochip0")
+
+def _open_pinctrl_chip():
+    """Open the gpiochip that owns the 40-pin user header.
+
+    Pi 4 / Zero 2W / CM4 / older: BCM SoC pinctrl, enumerated as
+    /dev/gpiochip0 (label pinctrl-bcm2835 or pinctrl-bcm2711).
+
+    Pi 5 / CM5: RP1 southbridge, its own pinctrl driver. Typically
+    /dev/gpiochip4 — /dev/gpiochip0 either doesn't exist or points
+    at the BCM2712's internal-only pinctrl. Hardcoding gpiochip0
+    throws FileNotFoundError on those boxes.
+
+    Strategy: try labels first (libgpiod v1's Chip constructor
+    accepts a label via gpiod_chip_open_lookup), then enumerate
+    /dev/gpiochip* and match by chip.label(), then finally try the
+    common numeric names.
+    """
+    # 1. Label lookup — cheapest path, works on any Pi with libgpiod v1.6+.
+    for label in ("pinctrl-rp1", "pinctrl-bcm2711", "pinctrl-bcm2835"):
+        try:
+            return gpiod.Chip(label)
+        except (OSError, FileNotFoundError):
+            continue
+    # 2. Enumerate /dev/gpiochip* and match label ourselves. Handles the
+    # case where libgpiod's label lookup was disabled at build time.
+    for path in sorted(glob.glob("/dev/gpiochip*")):
+        name = path.rsplit("/", 1)[-1]
+        try:
+            candidate = gpiod.Chip(name)
+        except (OSError, FileNotFoundError):
+            continue
+        try:
+            label = candidate.label() if hasattr(candidate, "label") else ""
+        except Exception:
+            label = ""
+        if label in ("pinctrl-rp1", "pinctrl-bcm2711", "pinctrl-bcm2835"):
+            return candidate
+        try:
+            candidate.close()
+        except Exception:
+            pass
+    # 3. Numeric fallback — Pi 5's RP1 is often gpiochip4; older Pis are 0.
+    for name in ("gpiochip4", "gpiochip0"):
+        try:
+            return gpiod.Chip(name)
+        except (OSError, FileNotFoundError):
+            continue
+    raise RuntimeError(
+        "no pinctrl gpiochip found; tried labels pinctrl-{rp1,bcm2711,bcm2835} "
+        "and numeric gpiochip4/gpiochip0"
+    )
+
+
+chip = _open_pinctrl_chip()
 
 # Enable the SoC's internal pull-up on every strap pin so an unconnected
 # pin reads HIGH and only pins the board actively grounds read LOW.

@@ -1,0 +1,42 @@
+#!/bin/bash
+#
+# hotspot-gpiochip — print the gpiochip device name that owns the
+# 40-pin user header on this Pi.
+#
+# Older Pis (Zero, 1, 2, 3, Zero 2W, 4, CM4) route the user header
+# through the BCM SoC's pinctrl, which the kernel enumerates as
+# /dev/gpiochip0 (label pinctrl-bcm2835 or pinctrl-bcm2711).
+#
+# Pi 5 / CM5 route the user header through the RP1 southbridge with
+# its own pinctrl driver. The RP1 is exposed as a SEPARATE gpiochip
+# — commonly /dev/gpiochip4, sometimes /dev/gpiochip0 depending on
+# kernel version and driver load order. The BCM2712's own gpiochip
+# is internal-only and does NOT expose the user header.
+#
+# Detection strategy: enumerate chips by label with `gpiodetect`,
+# prefer pinctrl-rp1 (Pi 5 user header) over any bcm* pinctrl.
+# Falls back to gpiochip0 for the historical default so old scripts
+# that hardcoded gpiochip0 keep working.
+#
+# Output: single line with the chip name (e.g. "gpiochip0" or
+# "gpiochip4"). Exit 0 always.
+
+if command -v gpiodetect >/dev/null 2>&1; then
+  # gpiodetect output: "gpiochip0 [pinctrl-rp1] (54 lines)"
+  # Prefer pinctrl-rp1 (Pi 5 user header). If not present, take any
+  # bcm* pinctrl (Pi 4 / Zero 2W / older). Skip pinctrl-bcm2712
+  # explicitly — that's Pi 5's INTERNAL pinctrl and doesn't own the
+  # user header.
+  for label in pinctrl-rp1 pinctrl-bcm2711 pinctrl-bcm2835; do
+    chip=$(gpiodetect 2>/dev/null | awk -v l="[$label]" '$2 == l {print $1; exit}')
+    if [ -n "$chip" ]; then
+      echo "$chip"
+      exit 0
+    fi
+  done
+fi
+
+# Last-resort fallback: assume the historical gpiochip0. Wrong on
+# Pi 5 without gpiodetect, but that's the same failure mode we had
+# before this script existed, so no regression.
+echo "gpiochip0"

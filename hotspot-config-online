@@ -1215,14 +1215,31 @@ EOF
   # upgrade run.
   say "--> Done"
   say ""
-  say "Send any CTCSS tone to ${FREQ} with D1# to activate the parrot (to test audio levels)"
-  say "Send CTCSS tone mapped to a channel to switch talkgroup (only when there is no traffic and you are in TG0)"
-  say "You here a small two-tone when we are back in listening mode on TG0, when there is traffic on a monitored it will be automaticaly activated !"
+  # Parrot + TG-switching instructions differ per SWITCH_MODE. In DTMF
+  # mode there's no per-tone TG mapping, only the single RX CTCSS tone
+  # opens squelch and TG changes are dialled; in CTCSS mode the mapped
+  # tones both open squelch (parrot) AND drive the TG switch.
+  if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
+    say "Set your HT RX CTCSS to ${CTCSSRX} Hz, then key up and dial D1# to activate the parrot (test audio levels)"
+    say "Dial the talkgroup number followed by # (e.g. 8# for TG 8) to switch talkgroup"
+    say "  Only works with no active traffic AND when currently on the default TG."
+  else
+    say "Send any of the mapped CTCSS tones to ${FREQ} with D1# to activate the parrot (test audio levels)"
+    say "Send the CTCSS tone mapped to a talkgroup to switch to it — mapping: ${CTCSSMAPPING}"
+    say "  Only works with no active traffic AND when currently on TG0."
+  fi
+  say "You'll hear a small two-tone when the box drops back to the default TG; monitored TGs auto-activate on incoming traffic."
   say ""
   say "run [>sudo /usr/sbin/hotspot-volume] to adjust volume levels"
   say "run [>sudo /usr/sbin/hotspot-tune-volume] to auto-tune RX gain to your HT (key up + speak)"
   say "run [>sudo /usr/sbin/hotspot-frequency] to adjust frequency and tx ctcss tone"
-  say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust talkgroups (and the CTCSS mapping on non-PRO chips)"
+  # hotspot-talkgroups edits the CTCSS→TG mapping only in CTCSS switching
+  # mode. In DTMF mode there's no mapping, just the monitored-TG list.
+  if [[ "${SWITCH_MODE}" == "CTCSS" ]]; then
+    say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust monitored talkgroups and the CTCSS→TG mapping"
+  else
+    say "run [>sudo /usr/sbin/hotspot-talkgroups] to adjust monitored talkgroups"
+  fi
   say "run [>sudo /usr/sbin/hotspot-on-webportal] to update webportal talkgroups"
   say "run [>sudo /usr/sbin/install-4gmodule] to install 4g support if you have a hotspot-4g"
   say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and use the companion app on your computer / phone (https://svxlink-hotspot.app)"

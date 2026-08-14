@@ -175,10 +175,68 @@ if [ "$IS_PI_ZERO2W" -ne 1 ]; then
     STRIPPED=1
   fi
   if [ "$STRIPPED" -eq 1 ]; then
-    say "  Pi Zero 2W CPU/UART tuning stripped — a reboot is needed for the change to take effect."
+    # The strip changed /boot/firmware/config.txt / cmdline.txt —
+    # those don't take effect until the next boot. Continuing the
+    # rest of hotspot-config now would set up SVXLink against a
+    # potentially-hosed CPU/UART clock (that's the whole reason we
+    # stripped in the first place), so bail out cleanly and get the
+    # user through the reboot before we do anything else.
+    say ""
+    gum style --foreground 220 --bold "REBOOT NEEDED — Pi Zero 2W CPU/UART tuning was stripped from /boot/firmware."
+    say ""
+    say "  Please run:"
+    say "    1. sudo reboot"
+    say "    2. sudo hotspot-config   (re-run — will pick up from here)"
+    say ""
+    say "Exiting hotspot-config now."
+    exit 0
   fi
 fi
 echo ""
+
+# --- system-update gate ------------------------------------------------
+# Before we start writing config, make sure the base system is fully
+# patched. Running the config against an outdated kernel / libc / etc.
+# is the source of several problems we've hit before (wm8960 module
+# built for an old kernel, systemd behaviour differences on Bookworm
+# vs Bullseye, etc.). If any apt package is upgradable, apply the
+# upgrade in-line and bail out to force a reboot — so the next
+# hotspot-config run happens against a fully-current system.
+#
+# Skipped silently if apt isn't available (non-Debian derivatives) or
+# there's no network — in the latter case `apt update` errors, no
+# upgradable packages surface, and we fall through.
+if command -v apt >/dev/null 2>&1; then
+  say "Checking for pending system updates..."
+  apt update >/dev/null 2>&1 || true
+  # apt list --upgradable prints one line per upgradable package plus
+  # a "Listing..." header. Count non-header lines.
+  UPGRADABLE=$(apt list --upgradable 2>/dev/null | grep -cvE '^(Listing\.\.\.|WARNING|$)' || true)
+  if [ "${UPGRADABLE:-0}" -gt 0 ]; then
+    say "  ${UPGRADABLE} package(s) can be upgraded — showing list, then applying:"
+    apt list --upgradable 2>/dev/null | grep -vE '^(Listing\.\.\.|WARNING|$)' | sed 's/^/    /'
+    say ""
+    say "Applying updates (this can take several minutes)..."
+    DEBIAN_FRONTEND=noninteractive apt-get -y full-upgrade
+    UPGRADE_RC=$?
+    say ""
+    if [ "${UPGRADE_RC}" -eq 0 ]; then
+      gum style --foreground 220 --bold "REBOOT NEEDED — system packages were upgraded."
+      say ""
+      say "  Please run:"
+      say "    1. sudo reboot"
+      say "    2. sudo hotspot-config   (re-run — will pick up from here)"
+      say ""
+      say "Exiting hotspot-config now."
+      exit 0
+    else
+      say "  apt full-upgrade exited ${UPGRADE_RC} — continuing config anyway (fix apt manually if this recurs)."
+    fi
+  else
+    say "  System is up to date."
+  fi
+  echo ""
+fi
 
 # Detect chip variant + firmware version and enable/disable monitor accordingly.
 # Example output: "SA818: INFO: Firmware SA818, version: V1.0"

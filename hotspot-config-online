@@ -1285,6 +1285,18 @@ EOF
   run "wget -O /usr/sbin/hotspot_bandswitch https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot_bandswitch > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot_bandswitch"
 
+  # Systemd units. svxlink.service in particular needs updating on
+  # existing boxes so the hotspot_bandswitch ExecStartPre line is
+  # dropped — leaving the old ExecStartPre in place would keep
+  # calling the pre-neuter hotspot_bandswitch on any boot that
+  # predated the auto-refresh above. remotetrx.service is refreshed
+  # in the same block so any svxlink_checkalsa-related tweaks land
+  # in both units together.
+  say "Refreshing svxlink.service + remotetrx.service"
+  run "wget -O /lib/systemd/system/svxlink.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.service > /dev/null 2>&1"
+  run "wget -O /lib/systemd/system/remotetrx.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/remotetrx.service > /dev/null 2>&1"
+  run "systemctl daemon-reload"
+
   # hotspot-tune-volume itself is refreshed at the TOP of this script
   # (staged download) — that's early enough for the invocation earlier
   # in the commit block to see the fresh copy on the very first

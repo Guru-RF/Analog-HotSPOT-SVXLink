@@ -1,17 +1,30 @@
 #!/bin/bash
-# ExecStartPre for svxlink.service / remotetrx.service: wait for the
-# sound card to be ready, then apply hotspot_volume.
+# ExecStartPre for svxlink.service / remotetrx.service.
 #
-# Codec-agnostic. Handles both:
-#   WM8960 (old boards) — out-of-tree driver kicked by /usr/bin/wm8960-soundcard
-#   TLV320AIC3204 (REV 6+) — in-tree driver, loaded automatically by the
-#                            audiosense-pi dtoverlay; no helper needed.
+# WM8960 (old boards): kicks the Waveshare userspace helper
+# (/usr/bin/wm8960-soundcard) if present, waits for the card to
+# enumerate, then applies /usr/sbin/hotspot_volume so the mixer
+# state matches what hotspot-config generated.
 #
-# The WM8960 helper is called only if it's installed (won't be on REV
-# 6+ boxes since install-radiomodule.sh skips the Waveshare install
-# there). After that we just poll aplay -l for any card to appear;
-# whichever codec is present will show up within a few seconds.
+# TLV320AIC3204 (REV 6+ boards): NOTHING to do here — exit 0.
+# The audiosense-pi dtoverlay loads the in-tree snd-soc-tlv320aic32x4
+# driver at boot with no userspace kick, alsactl restores mixer
+# state, and hotspot-config / hotspot-tune-volume apply
+# hotspot_volume directly (not via this ExecStartPre). Running the
+# WM8960-shaped helper here would fail with "wm8960-soundcard: command
+# not found" clutter in the journal and never touch the actual
+# card.
 
+CODEC=$(/usr/local/bin/hotspot-audio-detect 2>/dev/null || echo UNKNOWN)
+
+case "$CODEC" in
+  TLV320AIC3204)
+    exit 0
+    ;;
+esac
+
+# WM8960 (or UNKNOWN — assume WM8960 for backwards compat with old
+# images that predate hotspot-audio-detect).
 [ -x /usr/bin/wm8960-soundcard ] && /usr/bin/wm8960-soundcard >/dev/null 2>&1 || true
 
 for i in $(seq 1 30); do

@@ -29,7 +29,12 @@ ExecStartPre=-/bin/touch ${LOGFILE}
 ExecStartPre=-/bin/chown ${RUNASUSER} ${LOGFILE}
 ExecStartPre=-/bin/chown -R ${RUNASUSER}:${RUNASUSER} /var/lib/svxlink
 ExecStartPre=-/usr/sbin/svxlink_checkalsa
-ExecStartPre=-/usr/sbin/hotspot_bandswitch
+# hotspot_bandswitch removed — its old auto-sed-frequency-to-detected-band
+# behaviour silently stomped deliberate cross-band configs on every
+# svxlink start. The script itself is now warn-only (see the
+# hotspot_bandswitch script), but dropping the ExecStartPre entirely
+# means old installs that haven't refreshed the script yet also stop
+# reverting the freq.
 ExecStartPre=-/usr/sbin/hotspot
 ExecStartPre=-/usr/sbin/hotspot_volume
 ExecStart=/bin/sh -c '/usr/bin/nc -lk 10000 | /usr/bin/svxlink --config=${CFGFILE} --runasuser=${RUNASUSER} | /usr/sbin/hotspot_logger ${LOGFILE}'

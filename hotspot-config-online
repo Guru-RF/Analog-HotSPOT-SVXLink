@@ -376,6 +376,51 @@ if [ -f "$CONFIG_TXT" ]; then
   esac
 fi
 
+# If we just changed which codec overlay is in /boot/firmware/config.txt,
+# the kernel is still bound to the OLD overlay — any downstream health
+# check, hotspot_volume application, or svxlink startup would run
+# against the wrong codec. Exit now and force the reboot so the next
+# hotspot-config run starts on the correct kernel state. Detected by
+# comparing what's now in config.txt against what's currently loaded
+# in /proc/asound/cards.
+OVERLAY_SWAP_PENDING=0
+case "$AUDIO_CODEC" in
+  TLV320AIC3204)
+    # Fresh install / codec swap: audiosense-pi is in config.txt but the
+    # kernel is still on the wm8960 overlay (or has no card at all).
+    if ! grep -qi 'audiosense-pi\|audiosensepi\|tlv320aic3204' /proc/asound/cards 2>/dev/null; then
+      OVERLAY_SWAP_PENDING=1
+    fi
+    ;;
+  WM8960)
+    if ! grep -qi 'wm8960' /proc/asound/cards 2>/dev/null; then
+      # WM8960 not yet loaded — but this could also be the "stale kernel
+      # module" case that the health-check block below handles. Only
+      # flag a reboot for the swap case: config.txt WAS just changed
+      # (audiosense-pi was removed / wm8960-soundcard was added).
+      # Simplest signal: audiosense-pi still shows up in the loaded
+      # cards even though we removed the overlay from config.txt.
+      if grep -qi 'audiosense-pi\|audiosensepi\|tlv320aic3204' /proc/asound/cards 2>/dev/null; then
+        OVERLAY_SWAP_PENDING=1
+      fi
+    fi
+    ;;
+esac
+if [ "${OVERLAY_SWAP_PENDING}" -eq 1 ]; then
+  say ""
+  gum style --foreground 220 --bold "REBOOT NEEDED — audio codec overlay was just changed in /boot/firmware/config.txt."
+  say ""
+  say "  The kernel is still bound to the OLD overlay. Continuing hotspot-config"
+  say "  now would set up SVXLink against the wrong codec."
+  say ""
+  say "  Please run:"
+  say "    1. sudo reboot"
+  say "    2. sudo hotspot-config   (re-run — will pick up from here)"
+  say ""
+  say "Exiting hotspot-config now."
+  exit 0
+fi
+
 # --- WM8960 driver health check ---------------------------------------
 # The Waveshare WM8960-Audio-HAT driver is out-of-tree; even with DKMS
 # it can fall out of sync when the kernel is bumped (apt full-upgrade)
@@ -575,15 +620,24 @@ NEW_HOSTNAME="${NEW_HOSTNAME,,}"
 gum style --foreground 212 "${NEW_HOSTNAME}"
 
 gum style --foreground "#04B575" "Band:"
-# Prefer the GPIO-detected band from hotspot-detect over OLDFREQ guessing
-# — the hat ID pins are authoritative. Fall back to OLDFREQ when the hat
-# is too old to report a band (returns UNKNOWN_BAND).
-if [[ "${DETECTED_BAND}" == "VHF" ]]; then
+# Band-prompt default priority:
+#   1. OLDFREQ (previously-saved user choice) if it clearly falls in a
+#      band — user knows what they're doing, respect it. This is what
+#      lets a UHF-detected chip that the user deliberately programmed
+#      for VHF (e.g. bench-testing with a VHF antenna and CTCSS gate)
+#      keep VHF as the default on subsequent runs instead of being
+#      pulled back to 434.925 every time.
+#   2. DETECTED_BAND from hotspot-detect (GPIO straps) — authoritative
+#      on first-time installs / anything without a saved freq.
+#   3. Historical default UHF as a last resort.
+if [[ "${OLDFREQ}" == 1* ]]; then
+  BAND=$(gum choose "2m" "70cm")
+elif [[ "${OLDFREQ}" == 4* ]]; then
+  BAND=$(gum choose "70cm" "2m")
+elif [[ "${DETECTED_BAND}" == "VHF" ]]; then
   BAND=$(gum choose "2m" "70cm")
 elif [[ "${DETECTED_BAND}" == "UHF" ]]; then
   BAND=$(gum choose "70cm" "2m")
-elif [[ "${OLDFREQ}" == 1* ]]; then
-  BAND=$(gum choose "2m" "70cm")
 else
   BAND=$(gum choose "70cm" "2m")
 fi

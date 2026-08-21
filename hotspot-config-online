@@ -1277,13 +1277,14 @@ EOF
   run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
   run "chmod +x /usr/sbin/svxlink_checkalsa"
 
-  # hotspot_bandswitch used to auto-sed the configured freq to match
-  # whatever hotspot-detect saw on the GPIO straps — that stomped
-  # deliberate cross-band configs on every svxlink start. The refresh
-  # here pulls the neutered warn-only version.
-  say "Downloading hotspot_bandswitch"
-  run "wget -O /usr/sbin/hotspot_bandswitch https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot_bandswitch > /dev/null 2>&1"
-  run "chmod +x /usr/sbin/hotspot_bandswitch"
+  # hotspot_bandswitch is retired — the band + freq are chosen by the
+  # user in the prompts above (band-default respects OLDFREQ over
+  # DETECTED_BAND, freq default respects OLDFREQ) and the ExecStartPre
+  # entry that used to call it has been dropped from svxlink.service.
+  # Any file lingering at /usr/sbin/hotspot_bandswitch on an old box
+  # is now dead code — nothing calls it. Clean it up so nobody trips
+  # over a stale helper later.
+  rm -f /usr/sbin/hotspot_bandswitch
 
   # Systemd units. svxlink.service in particular needs updating on
   # existing boxes so the hotspot_bandswitch ExecStartPre line is

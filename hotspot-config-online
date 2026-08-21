@@ -874,29 +874,43 @@ fi
 TGS=$(gum input --value "${OLDTGS}")
 gum style --foreground 212 "${TGS}"
 
-# AFVOL / RFVOL defaults are codec-specific. TLV320AIC3204 (REV 6+)
-# wants a hotter TX drive (85%) and a much lower RX gain (20%) than
-# the WM8960 analog chain did — the codec's PGA stage runs at
-# ~31 dB per 65% (see amixer sget 'PGA Level' output), so 65% would
-# ride the sa818's line-out into clipping.
+# AFVOL / RFVOL — start from the value that was already in
+# /usr/sbin/hotspot_volume (whatever hotspot-tune-volume last
+# persisted) and fall back to codec-specific defaults when nothing
+# was stored yet. Actually PROMPT the user via gum input — earlier
+# versions hardcoded these to the default, which silently discarded
+# every hotspot-tune-volume result on the next hotspot-config run
+# (mixer would come back at the default instead of the tuned value).
 if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
-  gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 85 for TLV320AIC3204):"
-  AFVOL=85
+  AFDEFAULT=85
 else
-  gum style --foreground "#04B575" "Enter AF output volume [50-99] (default 77):"
-  AFVOL=77
+  AFDEFAULT=77
+fi
+gum style --foreground "#04B575" "Enter AF output volume [50-99] (default ${AFDEFAULT}):"
+AFVOL=$(gum input --value "${OLDAFVOL:-${AFDEFAULT}}")
+if ! [[ "${AFVOL}" =~ ^[0-9]+$ ]]; then
+  AFVOL=${AFDEFAULT}
 fi
 gum style --foreground 212 "${AFVOL}"
 
+# RFVOL default is codec- AND board-aware:
+#   TLV320AIC3204 — 20% (PGA runs hot, ~31 dB per 65%)
+#   4th-gen WM8960 board — 65% (alsa %)
+#   older WM8960 board  — 0 (SA818 chip-side 0..23 scale)
 if [[ "${AUDIO_CODEC}" == "TLV320AIC3204" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 20 for TLV320AIC3204):"
-  RFVOL=20
+  RFDEFAULT=20
+  RFRANGE="[0-100]"
 elif [[ "${IS_NEW_BOARD}" == "1" ]]; then
-  gum style --foreground "#04B575" "Enter RF input volume [0-100] (default 65 for 4th-gen board):"
-  RFVOL=65
+  RFDEFAULT=65
+  RFRANGE="[0-100]"
 else
-  gum style --foreground "#04B575" "Enter RF input volume [0-23] (default 0):"
-  RFVOL=0
+  RFDEFAULT=0
+  RFRANGE="[0-23]"
+fi
+gum style --foreground "#04B575" "Enter RF input volume ${RFRANGE} (default ${RFDEFAULT}):"
+RFVOL=$(gum input --value "${OLDRFVOL:-${RFDEFAULT}}")
+if ! [[ "${RFVOL}" =~ ^[0-9]+$ ]]; then
+  RFVOL=${RFDEFAULT}
 fi
 gum style --foreground 212 "${RFVOL}"
 
@@ -1262,6 +1276,14 @@ EOF
   say "Downloading svxlink_checkalsa"
   run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
   run "chmod +x /usr/sbin/svxlink_checkalsa"
+
+  # hotspot_bandswitch used to auto-sed the configured freq to match
+  # whatever hotspot-detect saw on the GPIO straps — that stomped
+  # deliberate cross-band configs on every svxlink start. The refresh
+  # here pulls the neutered warn-only version.
+  say "Downloading hotspot_bandswitch"
+  run "wget -O /usr/sbin/hotspot_bandswitch https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot_bandswitch > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/hotspot_bandswitch"
 
   # hotspot-tune-volume itself is refreshed at the TOP of this script
   # (staged download) — that's early enough for the invocation earlier

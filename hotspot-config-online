@@ -126,6 +126,51 @@ else
 fi
 say "GPIO chip for user header: ${GPIOCHIP}"
 
+# ---------------------------------------------------------------------
+# Boot-critical runtime helpers — refreshed UNCONDITIONALLY on every
+# hotspot-config run, even if the user aborts the prompts or declines
+# the commit-changes confirmation. These files are called from
+# systemd ExecStartPre at every svxlink start, so a stale copy on
+# disk keeps causing user-visible breakage (freq revert, wm8960
+# helper missing on TLV boxes, etc.) until a full config completes.
+# ---------------------------------------------------------------------
+
+# svxlink_checkalsa. Codec-aware — exits 0 on TLV320AIC3204 (in-tree
+# driver via audiosense-pi, no userspace kick needed) and does the
+# WM8960 wait-and-apply flow otherwise. Older on-disk copies are
+# WM8960-only and blindly call /usr/bin/wm8960-soundcard which
+# doesn't exist on REV 6+ boxes.
+say "Refreshing svxlink_checkalsa from upstream"
+if wget -q -O /tmp/svxlink_checkalsa.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa 2>/dev/null \
+   && [ -s /tmp/svxlink_checkalsa.new ]; then
+  install -m 755 /tmp/svxlink_checkalsa.new /usr/sbin/svxlink_checkalsa
+  rm -f /tmp/svxlink_checkalsa.new
+else
+  say "Could not refresh svxlink_checkalsa (offline?), using installed copy"
+  rm -f /tmp/svxlink_checkalsa.new
+fi
+
+# Systemd units. svxlink.service in particular needs updating on
+# existing boxes so the retired hotspot_bandswitch ExecStartPre line
+# is dropped — leaving it in place would keep calling the pre-neuter
+# hotspot_bandswitch on any boot until a full config completed.
+# daemon-reload is a no-op if nothing changed, cheap to run always.
+say "Refreshing svxlink.service + remotetrx.service from upstream"
+wget -q -O /tmp/svxlink.service.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.service 2>/dev/null \
+  && [ -s /tmp/svxlink.service.new ] \
+  && install -m 644 /tmp/svxlink.service.new /lib/systemd/system/svxlink.service
+wget -q -O /tmp/remotetrx.service.new https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/remotetrx.service 2>/dev/null \
+  && [ -s /tmp/remotetrx.service.new ] \
+  && install -m 644 /tmp/remotetrx.service.new /lib/systemd/system/remotetrx.service
+rm -f /tmp/svxlink.service.new /tmp/remotetrx.service.new
+systemctl daemon-reload
+
+# hotspot_bandswitch is retired (band + freq are chosen in the
+# prompts below; user can override per-run). Nothing calls it any
+# more, but any file lingering at /usr/sbin/hotspot_bandswitch on an
+# older box is dead weight — clean it up.
+rm -f /usr/sbin/hotspot_bandswitch
+
 # Detect the board (GPIO straps) BEFORE the chip — the board generation is
 # authoritative for the audio path and is independent of whatever the
 # SA818 says about itself over serial. The chip-detect call comes next
@@ -1267,38 +1312,13 @@ EOF
   run "wget -O /usr/sbin/install-svxlink-watchdog https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/install-svxlink-watchdog.sh > /dev/null 2>&1"
   run "chmod +x /usr/sbin/install-svxlink-watchdog"
 
-  # svxlink_checkalsa gets pulled in the same block so existing boxes
-  # pick up the codec-agnostic wait (drops the WM8960-only card-name
-  # grep). Static hotspot_volume is also refreshed for boxes that
-  # never re-ran hotspot-config: the codec-detecting fallback in the
-  # static copy is what runs at first boot before hotspot-config
-  # generates a codec-specific one.
-  say "Downloading svxlink_checkalsa"
-  run "wget -O /usr/sbin/svxlink_checkalsa https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink_checkalsa > /dev/null 2>&1"
-  run "chmod +x /usr/sbin/svxlink_checkalsa"
-
-  # hotspot_bandswitch is retired — the band + freq are chosen by the
-  # user in the prompts above (band-default respects OLDFREQ over
-  # DETECTED_BAND, freq default respects OLDFREQ) and the ExecStartPre
-  # entry that used to call it has been dropped from svxlink.service.
-  # Any file lingering at /usr/sbin/hotspot_bandswitch on an old box
-  # is now dead code — nothing calls it. Clean it up so nobody trips
-  # over a stale helper later.
-  rm -f /usr/sbin/hotspot_bandswitch
-
-  # Systemd units. svxlink.service in particular needs updating on
-  # existing boxes so the hotspot_bandswitch ExecStartPre line is
-  # dropped — leaving the old ExecStartPre in place would keep
-  # calling the pre-neuter hotspot_bandswitch on any boot that
-  # predated the auto-refresh above. remotetrx.service is refreshed
-  # in the same block so any svxlink_checkalsa-related tweaks land
-  # in both units together.
-  say "Refreshing svxlink.service + remotetrx.service"
-  run "wget -O /lib/systemd/system/svxlink.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/svxlink.service > /dev/null 2>&1"
-  run "wget -O /lib/systemd/system/remotetrx.service https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/remotetrx.service > /dev/null 2>&1"
-  run "systemctl daemon-reload"
-
-  # hotspot-tune-volume itself is refreshed at the TOP of this script
+  # svxlink_checkalsa, svxlink.service, remotetrx.service and the
+  # /usr/sbin/hotspot_bandswitch cleanup are all done UNCONDITIONALLY
+  # at the TOP of this script now — they're boot-critical helpers,
+  # skipping them when the user aborts the config was leaving old
+  # copies live.
+  #
+  # hotspot-tune-volume is likewise refreshed at the TOP
   # (staged download) — that's early enough for the invocation earlier
   # in the commit block to see the fresh copy on the very first
   # upgrade run.

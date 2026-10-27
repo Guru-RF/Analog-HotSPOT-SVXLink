@@ -121,6 +121,10 @@ say "Install fmchip-monitor.service"
 run "cp fmchip-monitor.service /lib/systemd/system/fmchip-monitor.service"
 run "systemctl enable fmchip-monitor"
 
+say "Install hotspot-fmchip-monitor"
+run "cp hotspot-fmchip-monitor /usr/sbin/hotspot-fmchip-monitor"
+run "chmod +x /usr/sbin/hotspot-fmchip-monitor"
+
 say "Install hotspot-online"
 run "cp hotspot-online /usr/sbin/hotspot-online"
 run "chmod +x /usr/sbin/hotspot-online"

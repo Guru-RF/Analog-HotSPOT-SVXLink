@@ -70,6 +70,12 @@ Some people find the callsigns announcements in QSO's ennoying, you can turn thi
 sudo hotspot-options
 ```
 
+**Hotspot version 1 or early version 2?** Turn on the FM chip monitor, otherwise CTCSS detection stops working after the hotspot's first transmission. See [Hotspot v1 / early v2: FM chip monitor](#hotspot-v1--early-v2-fm-chip-monitor).
+
+```bash
+sudo hotspot-fmchip-monitor on
+```
+
 17. Belgian users can update talkgroups + button presets:
 
 ```bash
@@ -181,6 +187,46 @@ https://www.youtube.com/watch?v=bKF9JRo0ORM
 - `hotspot-options` — Thermal + announcements  
 - `hotspot-talkgroups` — Monitored TGs (and CTCSS-to-TG mapping on non-PRO chips); on PRO chips the first monitored TG becomes the default TG  
 - `hotspot-volume` — Audio control
+- `hotspot-fmchip-monitor` — Re-apply the FM chip filters after every TX (needed on hotspot v1 / early v2, see below)
+
+---
+
+# Hotspot v1 / early v2: FM chip monitor
+
+On **hotspot version 1** and **early version 2** boards, the FM chip
+resets its audio filters **after every transmission**. From then on the
+audio coming out of the chip is no longer filtered, and **CTCSS
+detection stops working**: tones aren't recognised to open squelch or
+switch talkgroups, until the next reboot.
+
+The `fmchip-monitor` service works around this. It watches the SVXLink
+log and re-applies the chip filters every time the transmitter turns
+off.
+
+`hotspot-config` only enables it automatically when the chip reports
+exactly **SA818 firmware V1.0**. Not every v1 / early v2 board reports
+that, so if you have one of these boards, turn it on yourself:
+
+```bash
+sudo hotspot-fmchip-monitor on
+```
+
+This setting is kept when you re-run `hotspot-config`.
+
+Other options:
+
+```bash
+sudo hotspot-fmchip-monitor status   # current setting, service state and chip version
+sudo hotspot-fmchip-monitor off      # never run it
+sudo hotspot-fmchip-monitor auto     # back to the default (decided by chip version)
+```
+
+If you get "command not found", run `sudo hotspot-config` once (press
+Enter through the prompts and commit). That downloads the latest tools.
+Then run the command again.
+
+Hotspots with an SA818PRO or SA868 chip don't need the monitor, so leave
+them on `auto`.
 
 ---
 

@@ -6,10 +6,13 @@
 # svxlink logs "Turning the transmitter OFF", which "pokes" the chip
 # out of the bad state.
 #
-# fmchip-monitor is enabled ONLY on chips whose sa818-version reports
-# exact name "SA818" at firmware V1.0 (see the fmchip-monitor enable
-# gate in hotspot-config-online chip-detect block). SA818PRO and
-# SA868 don't need it.
+# hotspot-config auto-enables fmchip-monitor only on chips whose
+# sa818-version reports exact name "SA818" at firmware V1.0 (see the
+# fmchip-monitor enable gate in hotspot-config-online chip-detect
+# block). SA818PRO and SA868 don't need it. Hotspot v1 / early v2
+# boards that need it but report another version are switched on by
+# hand with `sudo hotspot-fmchip-monitor on` — without it the chip
+# filters reset after every TX and CTCSS detection stops working.
 #
 # We re-apply the `sa818 … filters …` line from /usr/sbin/hotspot
 # VERBATIM — not a hardcoded value. An older version of this script

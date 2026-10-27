@@ -1,0 +1,128 @@
+#!/bin/bash
+#
+# hotspot-fmchip-monitor — turn the fmchip-monitor service on/off by hand.
+#
+#   sudo hotspot-fmchip-monitor on       force on  (survives hotspot-config)
+#   sudo hotspot-fmchip-monitor off      force off (survives hotspot-config)
+#   sudo hotspot-fmchip-monitor auto     back to chip auto-detection
+#   sudo hotspot-fmchip-monitor status   show mode, service state and chip
+#
+# fmchip-monitor re-applies the SA818 audio filters after every TX. On
+# hotspot v1 and early v2 boards the chip drops its filters after each
+# transmission, which breaks CTCSS detection until the next reboot.
+# hotspot-config only auto-enables the monitor when the chip reports
+# exactly "SA818" firmware V1.0, so boards whose chip reports something
+# else need it switched on here.
+#
+# The choice is stored in /etc/hotspot-fmchip-monitor ("on" / "off");
+# no file means auto. hotspot-config-online reads the same file in its
+# chip-detect block, so a re-run of hotspot-config won't undo it.
+
+OVERRIDE_FILE=/etc/hotspot-fmchip-monitor
+
+if [ "$EUID" -ne 0 ]; then
+  printf "\x1b[38;5;196mThis script must be run as root (sudo hotspot-fmchip-monitor ...). Exiting...\x1b[39m\n"
+  exit 1
+fi
+
+run() {
+  exec=$1
+  printf "\x1b[38;5;104m --> ${exec}\x1b[39m\n"
+  eval ${exec}
+}
+
+say () {
+  say=$1
+  printf "\x1b[38;5;220m${say}\x1b[38;5;255m\n"
+}
+
+usage() {
+  say "Usage: sudo hotspot-fmchip-monitor on|off|auto|status"
+  say "  on     always run fmchip-monitor (hotspot v1 / early v2: CTCSS stops working after TX)"
+  say "  off    never run fmchip-monitor"
+  say "  auto   let hotspot-config decide from the chip version (default)"
+  say "  status show the current setting"
+}
+
+# Same serial-port pick as hotspot-config-online.
+if [ -e /dev/serial0 ]; then
+  SERIAL_PORT="/dev/serial0"
+elif [ -e /dev/ttyAMA0 ]; then
+  SERIAL_PORT="/dev/ttyAMA0"
+else
+  SERIAL_PORT="/dev/ttyS0"
+fi
+
+# Sets CHIPNAME / CHIPVERSION / CHIP_NEEDS_MONITOR. Mirrors the chip
+# gate in hotspot-config-online: only exact "SA818" at V1.0 needs it.
+detect_chip() {
+  CHIPRAW=$(sa818 --port ${SERIAL_PORT} version 2>&1)
+  CHIPNAME=$(echo "${CHIPRAW}" | awk '{print $4}')
+  CHIPNAME=${CHIPNAME%,}
+  CHIPVERSION=$(echo "${CHIPRAW}" | awk '{print $6}')
+  NUMVER=${CHIPVERSION#V}
+  VMAJOR=${NUMVER%%.*}
+  VMINOR=${NUMVER#*.}
+  if [[ "${CHIPNAME}" == "SA818" && "${VMAJOR}" == "1" && "${VMINOR}" == "0" ]]; then
+    CHIP_NEEDS_MONITOR=1
+  else
+    CHIP_NEEDS_MONITOR=0
+  fi
+}
+
+current_mode() {
+  MODE=$(tr -d '[:space:]' < ${OVERRIDE_FILE} 2>/dev/null)
+  if [[ "${MODE}" != "on" && "${MODE}" != "off" ]]; then
+    MODE="auto"
+  fi
+}
+
+monitor_on() {
+  run "systemctl enable fmchip-monitor"
+  run "systemctl restart fmchip-monitor"
+}
+
+monitor_off() {
+  run "systemctl stop fmchip-monitor"
+  run "systemctl disable fmchip-monitor"
+}
+
+if [ ! -f /usr/sbin/fmchip-monitor ]; then
+  say "/usr/sbin/fmchip-monitor is missing — your image is outdated, run sudo hotspot-config first."
+  exit 1
+fi
+
+case "$1" in
+  on)
+    echo "on" > ${OVERRIDE_FILE}
+    say "fmchip-monitor forced ON — chip filters are re-applied after every TX"
+    monitor_on
+    ;;
+  off)
+    echo "off" > ${OVERRIDE_FILE}
+    say "fmchip-monitor forced OFF"
+    monitor_off
+    ;;
+  auto)
+    rm -f ${OVERRIDE_FILE}
+    detect_chip
+    if [ "${CHIP_NEEDS_MONITOR}" = "1" ]; then
+      say "Auto: CHIP ${CHIPNAME} version ${CHIPVERSION} needs the monitor, enabling"
+      monitor_on
+    else
+      say "Auto: CHIP ${CHIPNAME} version ${CHIPVERSION} doesn't need the monitor, disabling"
+      monitor_off
+    fi
+    ;;
+  status)
+    current_mode
+    detect_chip
+    say "Mode:    ${MODE}"
+    say "Service: $(systemctl is-enabled fmchip-monitor 2>/dev/null), $(systemctl is-active fmchip-monitor 2>/dev/null)"
+    say "Chip:    ${CHIPNAME} ${CHIPVERSION}"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+esac

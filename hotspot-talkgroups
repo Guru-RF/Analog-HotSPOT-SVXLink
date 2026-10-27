@@ -142,4 +142,4 @@ if [[ "${SWITCH_MODE}" == "DTMF" ]]; then
 fi
 
 run "systemctl restart svxlink"
-run "systemctl restart fmchip-monitor"
+run "systemctl try-restart fmchip-monitor"

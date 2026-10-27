@@ -292,6 +292,12 @@ fi
 # V1.0 — exact name "SA818", no suffix. The SA818PRO (any version) and the
 # SA868 generation handle the failure modes the monitor was working around,
 # so they should run without it.
+#
+# Users can override the chip gate with `sudo hotspot-fmchip-monitor
+# on|off|auto`, stored in /etc/hotspot-fmchip-monitor. Hotspot v1 and
+# early v2 boards drop their chip filters after every TX (breaking CTCSS
+# detection) but don't always report exact SA818 V1.0, so "on" must
+# survive a hotspot-config re-run.
 systemctl stop fmchip-monitor
 CHIPRAW=$(sa818 --port ${SERIAL_PORT} version 2>&1)
 CHIPNAME=$(echo "${CHIPRAW}" | awk '{print $4}')
@@ -303,7 +309,17 @@ NUMVER=${CHIPVERSION#V}
 VMAJOR=${NUMVER%%.*}
 VMINOR=${NUMVER#*.}
 
-if [[ "${CHIPNAME}" == "SA818" && "${VMAJOR}" == "1" && "${VMINOR}" == "0" ]]; then
+FMCHIP_OVERRIDE=$(tr -d '[:space:]' < /etc/hotspot-fmchip-monitor 2>/dev/null)
+
+if [[ "${FMCHIP_OVERRIDE}" == "on" ]]; then
+  say "CHIP ${CHIPNAME} version ${CHIPVERSION} — chip monitor forced ON (sudo hotspot-fmchip-monitor auto to undo)"
+  systemctl enable fmchip-monitor
+  systemctl start fmchip-monitor
+elif [[ "${FMCHIP_OVERRIDE}" == "off" ]]; then
+  say "CHIP ${CHIPNAME} version ${CHIPVERSION} — chip monitor forced OFF (sudo hotspot-fmchip-monitor auto to undo)"
+  systemctl stop fmchip-monitor
+  systemctl disable fmchip-monitor
+elif [[ "${CHIPNAME}" == "SA818" && "${VMAJOR}" == "1" && "${VMINOR}" == "0" ]]; then
   say "old CHIP ${CHIPNAME} version ${CHIPVERSION} detected enabling chip monitor"
   systemctl enable fmchip-monitor
   systemctl start fmchip-monitor
@@ -1189,7 +1205,10 @@ EOF
   fi
 
   systemctl restart svxlink
-  systemctl restart fmchip-monitor
+  # try-restart, not restart: a plain restart also STARTS the monitor
+  # when the chip gate above disabled it, so it ran until the next
+  # reboot and then silently disappeared.
+  systemctl try-restart fmchip-monitor
 
   say "Updating Logic.tcl"
   run "wget -O /usr/share/svxlink/events.d/Logic.tcl https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/Logic.tcl > /dev/null 2>&1"
@@ -1283,6 +1302,10 @@ EOF
   run "wget -O /usr/sbin/hotspot-options https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-options > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-options"
 
+  say "Downloading hotspot-fmchip-monitor"
+  run "wget -O /usr/sbin/hotspot-fmchip-monitor https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-fmchip-monitor > /dev/null 2>&1"
+  run "chmod +x /usr/sbin/hotspot-fmchip-monitor"
+
   say "Downloading hotspot-volume"
   run "wget -O /usr/sbin/hotspot-volume https://raw.githubusercontent.com/Guru-RF/Analog-HotSPOT-SVXLink/master/hotspot-volume > /dev/null 2>&1"
   run "chmod +x /usr/sbin/hotspot-volume"
@@ -1354,6 +1377,7 @@ EOF
   say "run [>sudo /usr/sbin/install-bluetooth] to install bluetooth support and use the companion app on your computer / phone (https://svxlink-hotspot.app)"
   say ""
   say "run [>sudo /usr/sbin/hotspot-options] to reduce power consumption and better thermal and other interesting options"
+  say "run [>sudo /usr/sbin/hotspot-fmchip-monitor on] on a hotspot v1 / early v2 if CTCSS stops working after the hotspot transmits"
   say ""
   if [[ "${NEW_HOSTNAME}" != "hotspot" ]]; then
     say "After reboot the device advertises as http://${NEW_HOSTNAME}.local (not hotspot.local anymore)"
